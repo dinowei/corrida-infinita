@@ -1,0 +1,5 @@
+{
+  "name": "Corrida Infinita 3D",
+  "description": "An immersive 3D racing game built with React and Three.js, featuring realistic physics, dynamic camera effects, and a real-time UI.",
+  "requestFramePermissions": []
+}
