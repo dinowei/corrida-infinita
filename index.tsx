@@ -1,15 +1,28 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-
-const rootElement = document.getElementById('root');
-if (!rootElement) {
-  throw new Error("Could not find root element to mount to");
+export interface CarState {
+  position: THREE.Vector3;
+  speedKmh: number;
+  lateralGrip: number;
+  steeringAngle: number;
 }
 
-const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+export interface AICar {
+  id: string;
+  mesh: THREE.Mesh;
+  speed: number;
+  targetLane: number;
+  distance: number;
+  reactionTime: number;
+}
+
+export interface TrackSegment {
+  startZ: number;
+  endZ: number;
+  curvature: number;
+  width: number;
+}
+
+export interface InputState {
+  throttle: number;   // 0..1
+  brake: number;      // 0..1
+  steer: number;      // -1..1
+}
