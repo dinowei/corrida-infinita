@@ -1,28 +1,10 @@
-export interface CarState {
-  position: THREE.Vector3;
-  speedKmh: number;
-  lateralGrip: number;
-  steeringAngle: number;
-}
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './App.css';
 
-export interface AICar {
-  id: string;
-  mesh: THREE.Mesh;
-  speed: number;
-  targetLane: number;
-  distance: number;
-  reactionTime: number;
-}
-
-export interface TrackSegment {
-  startZ: number;
-  endZ: number;
-  curvature: number;
-  width: number;
-}
-
-export interface InputState {
-  throttle: number;   // 0..1
-  brake: number;      // 0..1
-  steer: number;      // -1..1
-}
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
