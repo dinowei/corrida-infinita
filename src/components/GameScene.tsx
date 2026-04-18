@@ -1,6 +1,6 @@
 import { Environment, Html, PerspectiveCamera, Sky } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Bloom, ChromaticAberration, EffectComposer, Vignette } from '@react-three/postprocessing';
+import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing';
 import {
   Suspense,
   useEffect,
@@ -28,6 +28,81 @@ type GameSceneProps = {
   onSpeedChange: (value: number) => void;
   onDistanceChange: (value: number) => void;
 };
+
+type TrafficCarData = {
+  id: string;
+  lane: number;
+  z: number;
+  speed: number;
+  color: string;
+  active: boolean;
+};
+
+const LANE_WIDTH = ROAD_WIDTH / 3;
+const TRAFFIC_COLORS = ['#f97316', '#38bdf8', '#ef4444', '#84cc16', '#eab308'];
+
+function getLaneX(lane: number) {
+  return (lane - 1) * LANE_WIDTH;
+}
+
+function getCurveOffset(distance: number) {
+  const broadTurn = Math.sin(distance / 140) * 1.05;
+  const secondaryTurn = Math.sin(distance / 58) * 0.42;
+  return broadTurn + secondaryTurn;
+}
+
+function createTrafficCar(index: number): TrafficCarData {
+  return {
+    id: `traffic-${index}`,
+    lane: index % 3,
+    z: -40 - index * 24,
+    speed: 88 + index * 6,
+    color: TRAFFIC_COLORS[index % TRAFFIC_COLORS.length],
+    active: index < 3,
+  };
+}
+
+function getDifficultyFactor(distance: number, speed: number) {
+  const distanceFactor = clamp(distance / 1800, 0, 1);
+  const speedFactor = clamp(speed / 248, 0, 1);
+  return clamp(distanceFactor * 0.72 + speedFactor * 0.28, 0, 1);
+}
+
+function getActiveTrafficTarget(difficulty: number) {
+  return 3 + Math.floor(difficulty * 5);
+}
+
+function chooseTrafficLane(traffic: TrafficCarData[], playerLane: number, spawnZ: number) {
+  const lanes = [0, 1, 2].sort(() => Math.random() - 0.5);
+
+  for (const lane of lanes) {
+    const laneBusy = traffic.some(
+      (car) => car.active && car.lane === lane && Math.abs(car.z - spawnZ) < 20,
+    );
+
+    const blocksPlayer = lane === playerLane && spawnZ > -65;
+
+    if (!laneBusy && !blocksPlayer) return lane;
+  }
+
+  return lanes[0];
+}
+
+function resetTrafficCar(
+  trafficCar: TrafficCarData,
+  traffic: TrafficCarData[],
+  index: number,
+  difficulty: number,
+  playerLane: number,
+) {
+  const spacingBase = 34 - difficulty * 12;
+  const spawnZ = -110 - index * spacingBase - Math.random() * (30 + difficulty * 35);
+  trafficCar.active = true;
+  trafficCar.z = spawnZ;
+  trafficCar.lane = chooseTrafficLane(traffic, playerLane, spawnZ);
+  trafficCar.speed = 74 + difficulty * 42 + Math.random() * (18 + difficulty * 14);
+  trafficCar.color = TRAFFIC_COLORS[(index + Math.floor(Math.random() * TRAFFIC_COLORS.length)) % TRAFFIC_COLORS.length];
+}
 
 function createLightTexture(kind: 'mist' | 'beam') {
   const size = 256;
@@ -123,13 +198,13 @@ function AtmosphericMist({
   const fogLayerRef = useRef<THREE.Group | null>(null);
 
   const mistBanks = useMemo(() => {
-    return Array.from({ length: 10 }, (_, index) => ({
+    return Array.from({ length: 5 }, (_, index) => ({
       key: `mist-${index}`,
       x: index % 2 === 0 ? -2.7 : 2.7,
       y: 0.95 + (index % 3) * 0.12,
-      z: -10 - index * 12,
-      scale: 6.5 + (index % 4) * 1.1,
-      opacity: 0.1 + (index % 3) * 0.025,
+      z: -18 - index * 18,
+      scale: 5.2 + (index % 3) * 0.9,
+      opacity: 0.035 + (index % 2) * 0.015,
     }));
   }, []);
 
@@ -154,7 +229,7 @@ function AtmosphericMist({
     if (fogLayerRef.current) {
       fogLayerRef.current.children.forEach((child, index) => {
         const material = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
-        material.opacity = mistBanks[index].opacity + speedFactor * 0.06;
+        material.opacity = mistBanks[index].opacity + speedFactor * 0.018;
       });
     }
   });
@@ -170,60 +245,13 @@ function AtmosphericMist({
           <planeGeometry args={[1, 1]} />
           <meshBasicMaterial
             map={mistTexture}
-            color="#d8ebff"
+            color="#c9d7ea"
             transparent
             opacity={bank.opacity}
             depthWrite={false}
-            blending={THREE.AdditiveBlending}
+            blending={THREE.NormalBlending}
           />
         </mesh>
-      ))}
-    </group>
-  );
-}
-
-function TrackAccentLights({
-  speedRef,
-}: {
-  speedRef: MutableRefObject<number>;
-}) {
-  const accentRef = useRef<THREE.Group | null>(null);
-
-  const lights = useMemo(() => {
-    return Array.from({ length: 16 }, (_, index) => ({
-      key: `accent-${index}`,
-      x: index % 2 === 0 ? -4.9 : 4.9,
-      y: 0.4,
-      z: -index * 14,
-    }));
-  }, []);
-
-  useFrame((_, delta) => {
-    const flow = (speedRef.current / 3.6) * delta * 1.05;
-    const speedFactor = clamp(speedRef.current / 248, 0, 1);
-
-    if (accentRef.current) {
-      accentRef.current.children.forEach((child, index) => {
-        child.position.z += flow;
-        if (child.position.z > 10) child.position.z -= 224;
-
-        const light = child as THREE.PointLight;
-        light.intensity = 0.65 + speedFactor * 0.45 + Math.sin(index + performance.now() * 0.002) * 0.06;
-      });
-    }
-  });
-
-  return (
-    <group ref={accentRef}>
-      {lights.map((light) => (
-        <pointLight
-          key={light.key}
-          position={[light.x, light.y, light.z]}
-          color={light.x < 0 ? '#59c7ff' : '#ff8a6b'}
-          intensity={0.8}
-          distance={8}
-          decay={2}
-        />
       ))}
     </group>
   );
@@ -236,13 +264,8 @@ function CarHeadlights({
   carRef: RefObject<THREE.Group | null>;
   speedRef: MutableRefObject<number>;
 }) {
-  const leftLightRef = useRef<THREE.SpotLight | null>(null);
-  const rightLightRef = useRef<THREE.SpotLight | null>(null);
-  const leftTargetRef = useRef<THREE.Object3D | null>(null);
-  const rightTargetRef = useRef<THREE.Object3D | null>(null);
   const beamTexture = useMemo(() => createLightTexture('beam'), []);
   const beamGroupRef = useRef<THREE.Group | null>(null);
-  const headlightGroupRef = useRef<THREE.Group | null>(null);
 
   useEffect(() => {
     return () => {
@@ -255,23 +278,6 @@ function CarHeadlights({
     if (!car) return;
 
     const speedFactor = clamp(speedRef.current / 248, 0, 1);
-    const leftTarget = leftTargetRef.current;
-    const rightTarget = rightTargetRef.current;
-
-    if (headlightGroupRef.current) {
-      headlightGroupRef.current.position.copy(car.position);
-      headlightGroupRef.current.rotation.copy(car.rotation);
-    }
-
-    if (leftTarget) {
-      leftTarget.position.set(car.position.x - 0.8, car.position.y + 0.2, car.position.z - 14 - speedFactor * 7);
-      if (leftLightRef.current) leftLightRef.current.target = leftTarget;
-    }
-
-    if (rightTarget) {
-      rightTarget.position.set(car.position.x + 0.8, car.position.y + 0.2, car.position.z - 14 - speedFactor * 7);
-      if (rightLightRef.current) rightLightRef.current.target = rightTarget;
-    }
 
     if (beamGroupRef.current) {
       beamGroupRef.current.position.copy(car.position);
@@ -279,7 +285,7 @@ function CarHeadlights({
 
       beamGroupRef.current.children.forEach((child) => {
         const material = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
-        material.opacity = 0.12 + speedFactor * 0.08;
+        material.opacity = 0.08 + speedFactor * 0.04;
       });
     }
   });
@@ -293,7 +299,7 @@ function CarHeadlights({
             map={beamTexture}
             color="#fff1c4"
             transparent
-            opacity={0.16}
+            opacity={0.1}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
           />
@@ -304,38 +310,12 @@ function CarHeadlights({
             map={beamTexture}
             color="#fff1c4"
             transparent
-            opacity={0.16}
+            opacity={0.1}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
           />
         </mesh>
       </group>
-
-      <group ref={headlightGroupRef}>
-        <spotLight
-          ref={leftLightRef}
-          color="#fff0c2"
-          intensity={16}
-          angle={0.26}
-          penumbra={0.65}
-          distance={26}
-          decay={1.6}
-          position={[-0.42, 0.28, -1.55]}
-        />
-        <spotLight
-          ref={rightLightRef}
-          color="#fff0c2"
-          intensity={16}
-          angle={0.26}
-          penumbra={0.65}
-          distance={26}
-          decay={1.6}
-          position={[0.42, 0.28, -1.55]}
-        />
-      </group>
-
-      <object3D ref={leftTargetRef} />
-      <object3D ref={rightTargetRef} />
     </>
   );
 }
@@ -343,9 +323,11 @@ function CarHeadlights({
 function CameraRig({
   targetRef,
   speedRef,
+  curveRef,
 }: {
   targetRef: RefObject<THREE.Group | null>;
   speedRef: MutableRefObject<number>;
+  curveRef: MutableRefObject<number>;
 }) {
   const { camera } = useThree();
   const chaseTarget = useMemo(() => new THREE.Vector3(), []);
@@ -355,14 +337,16 @@ function CameraRig({
     const target = targetRef.current;
     if (!target) return;
 
+    const curveInfluence = curveRef.current * 0.55;
+
     chaseTarget.set(
-      target.position.x * 0.5,
+      target.position.x * 0.5 + curveInfluence,
       4.2 + speedRef.current / 170,
       9 - speedRef.current / 50,
     );
 
     camera.position.lerp(chaseTarget, 0.075);
-    lookTarget.set(target.position.x * 0.72, 0.95, -7);
+    lookTarget.set(target.position.x * 0.72 + curveInfluence * 1.4, 0.95, -7);
     camera.lookAt(lookTarget);
   });
 
@@ -405,14 +389,14 @@ function SunsetAtmosphere({
       <Sky
         distance={450000}
         sunPosition={sunPosition}
-        turbidity={8}
-        rayleigh={2.6}
-        mieCoefficient={0.018}
-        mieDirectionalG={0.92}
+        turbidity={7.2}
+        rayleigh={2}
+        mieCoefficient={0.012}
+        mieDirectionalG={0.88}
       />
       <directionalLight
         ref={sunLightRef}
-        intensity={2.05}
+        intensity={1.75}
         color="#ffcf9b"
         position={[18, 16, -12]}
       />
@@ -432,8 +416,14 @@ function SceneContents({
   const lastSpeedValueRef = useRef(0);
   const lastUiSpeedRef = useRef(-1);
   const lastUiDistanceRef = useRef(-1);
+  const curveRef = useRef(0);
   const laneStripeGroupRef = useRef<THREE.Group | null>(null);
   const postGroupRef = useRef<THREE.Group | null>(null);
+  const trafficGroupRef = useRef<THREE.Group | null>(null);
+  const trafficStateRef = useRef<TrafficCarData[]>(
+    Array.from({ length: 6 }, (_, index) => createTrafficCar(index)),
+  );
+  const collisionCooldownRef = useRef(0);
 
   const laneMarkers = useMemo(() => {
     const markers: Array<{ key: string; x: number; z: number }> = [];
@@ -464,6 +454,7 @@ function SceneContents({
     const accelForce = keys.accelerate ? 54 : 17;
     const brakeForce = keys.brake ? 72 : 0;
     const steeringInput = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+    const playerLane = clamp(Math.round(car.position.x / LANE_WIDTH) + 1, 0, 2);
 
     if (isRunning) {
       speedRef.current += accelForce * frameDelta;
@@ -471,14 +462,33 @@ function SceneContents({
       speedRef.current -= 10.5 * frameDelta;
       speedRef.current = clamp(speedRef.current, 0, 248);
       distanceRef.current += (speedRef.current / 3.6) * frameDelta;
+      curveRef.current = THREE.MathUtils.lerp(
+        curveRef.current,
+        getCurveOffset(distanceRef.current) * 0.75,
+        0.045,
+      );
       car.position.x = clamp(
-        car.position.x + steeringInput * frameDelta * (2.35 + speedRef.current / 58),
+        car.position.x +
+          steeringInput * frameDelta * (2.35 + speedRef.current / 58) -
+          curveRef.current * frameDelta * (0.42 + speedRef.current / 420),
         -PLAYER_LIMIT,
         PLAYER_LIMIT,
       );
     } else {
       speedRef.current = THREE.MathUtils.lerp(speedRef.current, 0, 0.08);
+      curveRef.current = THREE.MathUtils.lerp(curveRef.current, 0, 0.08);
     }
+
+    const difficulty = getDifficultyFactor(distanceRef.current, speedRef.current);
+    const targetTrafficCount = getActiveTrafficTarget(difficulty);
+
+    trafficStateRef.current.forEach((trafficCar, index) => {
+      if (!trafficCar.active && index < targetTrafficCount) {
+        resetTrafficCar(trafficCar, trafficStateRef.current, index, difficulty, playerLane);
+      } else if (trafficCar.active && index >= targetTrafficCount) {
+        trafficCar.active = false;
+      }
+    });
 
     const accelerationDelta =
       (speedRef.current - lastSpeedValueRef.current) / Math.max(frameDelta, 0.0001);
@@ -490,8 +500,13 @@ function SceneContents({
     const speedLoad = (speedRef.current / 248) * 0.012;
     const pitch = clamp(speedLoad - accelerationPitch - brakingDive, -0.085, 0.06);
 
-    car.rotation.z = THREE.MathUtils.lerp(car.rotation.z, -bodyRoll * 8, 0.12);
+    car.rotation.z = THREE.MathUtils.lerp(
+      car.rotation.z,
+      -bodyRoll * 8 - curveRef.current * 0.075,
+      0.12,
+    );
     car.rotation.x = THREE.MathUtils.lerp(car.rotation.x, pitch, 0.08);
+    car.rotation.y = THREE.MathUtils.lerp(car.rotation.y, curveRef.current * 0.045, 0.08);
     car.position.y = THREE.MathUtils.lerp(
       car.position.y,
       0.02 + Math.max(0, accelerationPitch) * 0.22 - Math.max(0, -accelerationPitch) * 0.06,
@@ -502,6 +517,9 @@ function SceneContents({
 
     if (laneStripeGroupRef.current) {
       for (const child of laneStripeGroupRef.current.children) {
+        const curveAtMarker = getCurveOffset(distanceRef.current - child.position.z * 3.8) * 0.72;
+        const laneSign = Math.sign(child.position.x || 1);
+        child.position.x = laneSign * (ROAD_WIDTH / 6) + curveAtMarker;
         child.position.z += roadFlow * 1.6;
         if (child.position.z > 12) child.position.z -= 112;
       }
@@ -509,10 +527,44 @@ function SceneContents({
 
     if (postGroupRef.current) {
       for (const child of postGroupRef.current.children) {
+        const isLeft = child.position.x < 0;
+        const curveAtPost = getCurveOffset(distanceRef.current - child.position.z * 3.4) * 0.95;
+        child.position.x = (isLeft ? -4.4 : 4.4) + curveAtPost;
         child.position.z += roadFlow * 1.2;
         if (child.position.z > 10) child.position.z -= 200;
       }
     }
+
+    if (trafficGroupRef.current) {
+      trafficGroupRef.current.children.forEach((child, index) => {
+        const traffic = trafficStateRef.current[index];
+        child.visible = traffic.active;
+        if (!traffic.active) return;
+
+        const relativeFlow = ((speedRef.current - traffic.speed) / 3.6) * frameDelta;
+        traffic.z += relativeFlow * 1.05;
+
+        if (traffic.z > 16) {
+          resetTrafficCar(traffic, trafficStateRef.current, index, difficulty, playerLane);
+        }
+
+        const curveAtTraffic = getCurveOffset(distanceRef.current - traffic.z * 4.2) * 0.72;
+        child.position.x = getLaneX(traffic.lane) + curveAtTraffic;
+        child.position.z = traffic.z;
+        child.rotation.y = curveRef.current * 0.12 + (traffic.lane - 1) * 0.02;
+
+        if (
+          Math.abs(child.position.z) < 2.6 &&
+          Math.abs(child.position.x - car.position.x) < 1.15 &&
+          collisionCooldownRef.current <= 0
+        ) {
+          speedRef.current = Math.max(38, speedRef.current * 0.62);
+          collisionCooldownRef.current = 1.1;
+        }
+      });
+    }
+
+    collisionCooldownRef.current = Math.max(0, collisionCooldownRef.current - frameDelta);
 
     const roundedSpeed = Math.round(speedRef.current);
     const roundedDistance = Math.round(distanceRef.current);
@@ -531,15 +583,14 @@ function SceneContents({
   return (
     <>
       <color attach="background" args={['#08111f']} />
-      <fog attach="fog" args={['#08111f', 18, 72]} />
+      <fog attach="fog" args={['#223246', 32, 108]} />
       <PerspectiveCamera makeDefault position={[0, 4.2, 9]} fov={62} />
-      <CameraRig targetRef={playerCarRef} speedRef={speedRef} />
-      <ambientLight intensity={0.85} color="#c6d8ff" />
-      <hemisphereLight intensity={0.5} color="#ffc58f" groundColor="#102038" />
+      <CameraRig targetRef={playerCarRef} speedRef={speedRef} curveRef={curveRef} />
+      <ambientLight intensity={0.4} color="#aebfd4" />
+      <hemisphereLight intensity={0.22} color="#ffbc86" groundColor="#142133" />
       <SunsetAtmosphere speedRef={speedRef} />
-      <Environment preset="sunset" />
+      <Environment preset="sunset" environmentIntensity={0.34} />
       <AtmosphericMist speedRef={speedRef} />
-      <TrackAccentLights speedRef={speedRef} />
       <AsphaltSurface />
 
       <mesh position={[-SHOULDER_OFFSET, -0.02, TRACK_Z_POSITION]}>
@@ -576,13 +627,39 @@ function SceneContents({
         ))}
       </group>
 
+      <group ref={trafficGroupRef}>
+        {trafficStateRef.current.map((traffic, index) => (
+          <group key={traffic.id} position={[getLaneX(traffic.lane), 0.02, traffic.z]} visible={traffic.active}>
+            <mesh position={[0, 0.42, 0]}>
+              <boxGeometry args={[1.08, 0.42, 2.2]} />
+              <meshStandardMaterial
+                color={traffic.color}
+                metalness={0.68}
+                roughness={0.3}
+                envMapIntensity={1.15}
+              />
+            </mesh>
+            <mesh position={[0, 0.75, -0.08]}>
+              <boxGeometry args={[0.78, 0.28, 1]} />
+              <meshStandardMaterial color="#d7e6ff" metalness={0.2} roughness={0.08} />
+            </mesh>
+            <pointLight
+              color={index % 2 === 0 ? '#ff5f5f' : '#ff8c5f'}
+              intensity={0.28}
+              distance={2.2}
+              decay={2}
+              position={[0, 0.45, 1.05]}
+            />
+          </group>
+        ))}
+      </group>
+
       <Player carRef={playerCarRef} />
       <CarHeadlights carRef={playerCarRef} speedRef={speedRef} />
 
-      <EffectComposer multisampling={2}>
-        <Bloom intensity={1.05} luminanceThreshold={0.42} luminanceSmoothing={0.24} mipmapBlur />
-        <ChromaticAberration offset={new THREE.Vector2(0.001, 0.0015)} />
-        <Vignette eskil={false} offset={0.17} darkness={0.95} />
+      <EffectComposer multisampling={0}>
+        <Bloom intensity={0.18} luminanceThreshold={0.72} luminanceSmoothing={0.32} mipmapBlur />
+        <Vignette eskil={false} offset={0.08} darkness={0.58} />
       </EffectComposer>
     </>
   );
@@ -592,12 +669,12 @@ export default function GameScene(props: GameSceneProps) {
   return (
     <Canvas
       shadows={false}
-      dpr={[1, 2]}
-      gl={{ antialias: true }}
+      dpr={[1, 1.25]}
+      gl={{ antialias: false }}
       onCreated={({ gl }) => {
         gl.outputColorSpace = THREE.SRGBColorSpace;
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = 1.1;
+        gl.toneMappingExposure = 0.86;
       }}
     >
       <Suspense fallback={<LoadingFallback />}>
