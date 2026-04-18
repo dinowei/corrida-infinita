@@ -26,12 +26,7 @@
     ]
   },
   "include": [
-    "App.tsx",
-    "index.tsx",
-    "SRC/**/*",
-    "components/**/*",
-    "services/**/*",
-    "types.ts"
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",
