@@ -1,30 +1,100 @@
+/* ============================================
+   FORZA HORIZON THEME — CORRIDA INFINITA
+   Melhorias: velocidade, neon, grid de asfalto
+   ============================================ */
+
+:root {
+  --forza-orange: #ff4d00;
+  --forza-blue: #00e0ff;
+  --forza-dark: #0a0c12;
+  --forza-card: rgba(10, 12, 18, 0.8);
+  --forza-border: rgba(255, 77, 0, 0.3);
+  --forza-glow: 0 0 12px rgba(255, 77, 0, 0.6);
+  --text-primary: #ffffff;
+  --text-secondary: #b0b3c0;
+  --accent: var(--forza-orange);
+  --accent-bg: rgba(255, 77, 0, 0.12);
+  --accent-border: var(--forza-orange);
+  --shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  --transition-speed: 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Fundo com grid de pista e efeito de movimento */
+body {
+  background: radial-gradient(circle at 20% 30%, #0f1118, #05070c);
+  background-attachment: fixed;
+  font-family: 'Poppins', 'Inter', system-ui, -apple-system, sans-serif;
+  color: var(--text-primary);
+}
+
+/* Adiciona um overlay de linhas de velocidade sutis */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: repeating-linear-gradient(90deg,
+      rgba(255, 77, 0, 0.02) 0px,
+      rgba(255, 77, 0, 0.02) 2px,
+      transparent 2px,
+      transparent 8px);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .counter {
-  font-size: 16px;
-  padding: 5px 10px;
-  border-radius: 5px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 2px solid transparent;
-  transition: border-color 0.3s;
-  margin-bottom: 24px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  padding: 8px 18px;
+  border-radius: 40px;
+  color: var(--forza-orange);
+  background: var(--forza-card);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--forza-border);
+  transition: all var(--transition-speed);
+  margin-bottom: 28px;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+
+  &::before {
+    content: '🏁';
+    font-size: 1.2rem;
+    filter: drop-shadow(0 0 2px var(--forza-orange));
+  }
 
   &:hover {
-    border-color: var(--accent-border);
+    border-color: var(--forza-orange);
+    box-shadow: var(--forza-glow);
+    transform: scale(1.02) translateY(-2px);
+    background: rgba(255, 77, 0, 0.2);
   }
+
   &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    outline: 2px solid var(--forza-orange);
+    outline-offset: 3px;
   }
 }
 
 .hero {
   position: relative;
+  filter: drop-shadow(0 0 15px rgba(0, 224, 255, 0.3));
+  transition: filter 0.3s ease;
+
+  &:hover {
+    filter: drop-shadow(0 0 25px var(--forza-orange));
+  }
 
   .base,
   .framework,
   .vite {
     inset-inline: 0;
     margin: 0 auto;
+    transition: transform 0.2s ease;
   }
 
   .base {
@@ -33,17 +103,12 @@
     z-index: 0;
   }
 
-  .framework,
-  .vite {
-    position: absolute;
-  }
-
   .framework {
     z-index: 1;
     top: 34px;
     height: 28px;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
-      scale(1.4);
+    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg) scale(1.4);
+    filter: drop-shadow(0 0 6px var(--forza-blue));
   }
 
   .vite {
@@ -51,33 +116,46 @@
     top: 107px;
     height: 26px;
     width: auto;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
-      scale(0.8);
+    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg) scale(0.8);
   }
 }
 
 #center {
   display: flex;
   flex-direction: column;
-  gap: 25px;
+  gap: 28px;
   place-content: center;
   place-items: center;
   flex-grow: 1;
+  position: relative;
+  z-index: 2;
 
   @media (max-width: 1024px) {
-    padding: 32px 20px 24px;
-    gap: 18px;
+    padding: 28px 20px 24px;
+    gap: 22px;
   }
 }
 
 #next-steps {
   display: flex;
-  border-top: 1px solid var(--border);
+  border-top: 2px solid var(--forza-border);
   text-align: left;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  border-radius: 24px;
+  margin: 20px;
+  overflow: hidden;
+  transition: all 0.3s;
 
-  & > div {
+  &>div {
     flex: 1 1 0;
     padding: 32px;
+    transition: background 0.2s;
+
+    &:hover {
+      background: rgba(255, 77, 0, 0.05);
+    }
+
     @media (max-width: 1024px) {
       padding: 24px 20px;
     }
@@ -85,22 +163,29 @@
 
   .icon {
     margin-bottom: 16px;
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
+    filter: drop-shadow(0 0 3px var(--forza-orange));
+    transition: transform 0.2s ease;
+  }
+
+  div:hover .icon {
+    transform: scale(1.1) rotate(5deg);
   }
 
   @media (max-width: 1024px) {
     flex-direction: column;
     text-align: center;
+    margin: 16px;
   }
 }
 
 #docs {
-  border-right: 1px solid var(--border);
+  border-right: 2px solid var(--forza-border);
 
   @media (max-width: 1024px) {
     border-right: none;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 2px solid var(--forza-border);
   }
 }
 
@@ -108,54 +193,83 @@
   list-style: none;
   padding: 0;
   display: flex;
-  gap: 8px;
-  margin: 32px 0 0;
+  gap: 12px;
+  margin: 36px 0 0;
+  flex-wrap: wrap;
 
   .logo {
-    height: 18px;
+    height: 20px;
+    filter: brightness(0) invert(1);
+    transition: filter 0.2s;
   }
 
   a {
-    color: var(--text-h);
-    font-size: 16px;
-    border-radius: 6px;
-    background: var(--social-bg);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    border-radius: 40px;
+    background: rgba(20, 24, 32, 0.8);
+    backdrop-filter: blur(4px);
     display: flex;
-    padding: 6px 12px;
+    padding: 8px 18px;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     text-decoration: none;
-    transition: box-shadow 0.3s;
+    transition: all var(--transition-speed);
+    border: 1px solid transparent;
 
     &:hover {
-      box-shadow: var(--shadow);
+      box-shadow: var(--forza-glow);
+      border-color: var(--forza-orange);
+      background: rgba(255, 77, 0, 0.15);
+      transform: translateY(-2px);
     }
+
     .button-icon {
-      height: 18px;
-      width: 18px;
+      height: 20px;
+      width: 20px;
+      transition: transform 0.2s;
+    }
+
+    &:hover .button-icon {
+      transform: rotate(-10deg) scale(1.1);
     }
   }
 
   @media (max-width: 1024px) {
-    margin-top: 20px;
-    flex-wrap: wrap;
+    margin-top: 24px;
     justify-content: center;
 
     li {
-      flex: 1 1 calc(50% - 8px);
+      flex: 1 1 calc(50% - 12px);
     }
 
     a {
       width: 100%;
       justify-content: center;
-      box-sizing: border-box;
+      padding: 10px 12px;
     }
   }
 }
 
 #spacer {
   height: 88px;
-  border-top: 1px solid var(--border);
+  border-top: 2px solid var(--forza-border);
+  position: relative;
+
+  &::after {
+    content: '⚡';
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--forza-dark);
+    padding: 0 16px;
+    color: var(--forza-orange);
+    font-size: 1.2rem;
+    filter: drop-shadow(0 0 5px var(--forza-orange));
+  }
+
   @media (max-width: 1024px) {
     height: 48px;
   }
@@ -164,21 +278,122 @@
 .ticks {
   position: relative;
   width: 100%;
+  margin: 16px 0;
 
   &::before,
   &::after {
     content: '';
     position: absolute;
-    top: -4.5px;
-    border: 5px solid transparent;
+    top: -6px;
+    border: 6px solid transparent;
   }
 
   &::before {
     left: 0;
-    border-left-color: var(--border);
+    border-left-color: var(--forza-orange);
+    filter: drop-shadow(0 0 4px var(--forza-orange));
   }
+
   &::after {
     right: 0;
-    border-right-color: var(--border);
+    border-right-color: var(--forza-orange);
+    filter: drop-shadow(0 0 4px var(--forza-orange));
+  }
+}
+
+/* Efeito extra: faixa de velocidade no scroll */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0c12;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--forza-orange);
+  border-radius: 4px;
+  box-shadow: inset 0 0 3px black;
+}
+
+/* Sobreposição da UI sobre o canvas 3D */
+.game-ui-overlay {
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
+  /* garante que botões e links sejam clicáveis */
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.5);
+  /* fundo semi-transparente para contraste */
+  backdrop-filter: blur(4px);
+}
+
+/* Ajuste do #center para não perder o espaçamento */
+#center {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+/* Placar de pontuação */
+.score-display {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--forza-orange);
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
+  margin-top: 16px;
+}
+
+.gameover-msg {
+  font-size: 2rem;
+  color: red;
+  font-weight: bold;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+.reset-button {
+  margin-top: 20px;
+  padding: 12px 24px;
+  font-size: 1.2rem;
+  background: var(--forza-orange);
+  color: black;
+  border: none;
+  border-radius: 40px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+
+.reset-button:hover {
+  transform: scale(1.05);
+  box-shadow: var(--forza-glow);
+}
+
+/* Garantir que os cards de documentação fiquem legíveis */
+#next-steps>div {
+  background: rgba(10, 12, 18, 0.85);
+  backdrop-filter: blur(8px);
+  border-radius: 24px;
+  margin: 8px;
+}
+
+/* Ajuste de responsividade */
+@media (max-width: 1024px) {
+  .game-ui-overlay {
+    backdrop-filter: blur(2px);
   }
 }
