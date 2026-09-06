@@ -5,4 +5,5 @@ export type KeyboardState = {
   right: boolean;
   accelerate: boolean;
   brake: boolean;
+  nitro: boolean;
 };

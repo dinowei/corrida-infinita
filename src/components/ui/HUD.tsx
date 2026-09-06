@@ -1,6 +1,9 @@
 type HUDProps = {
   speed: number;
   distance: number;
+  nitro: number;
+  score: number;
+  best: number;
   tip: string;
   countdownText: string;
   showCountdown: boolean;
@@ -9,6 +12,9 @@ type HUDProps = {
 export default function HUD({
   speed,
   distance,
+  nitro,
+  score,
+  best,
   tip,
   countdownText,
   showCountdown,
@@ -17,7 +23,9 @@ export default function HUD({
     <>
       <header className="top-bar">
         <div className="brand-pill">Corrida Infinita</div>
-        <div className="stat-pill">Distancia: {distance} m</div>
+        <div className="stat-pill">Distância: {distance} m</div>
+        <div className="stat-pill">Score: {score}</div>
+        <div className="stat-pill">Recorde: {best}</div>
       </header>
 
       {showCountdown ? (
@@ -33,7 +41,11 @@ export default function HUD({
         <div className="speed-value">{speed}</div>
         <div className="speed-unit">km/h</div>
         <div className="speed-track">
-          <div className="speed-fill" style={{ width: `${(speed / 248) * 100}%` }} />
+          <div className="speed-fill" style={{ width: `${Math.min(100, (speed / 320) * 100)}%` }} />
+        </div>
+        <div className="nitro-label">NITRO {nitro}%</div>
+        <div className="nitro-track">
+          <div className="nitro-fill" style={{ width: `${nitro}%` }} />
         </div>
       </div>
 

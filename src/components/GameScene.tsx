@@ -20,6 +20,8 @@ import {
 } from '../lib/asphalt';
 import { clamp, PLAYER_LIMIT, ROAD_WIDTH } from '../lib/game';
 import type { GamePhase, KeyboardState } from '../types/game';
+import { loadBest, saveBest } from '../game/save';
+import { setEngine, sfxNearMiss, unlockAudio } from '../game/audio';
 import Player from './Player';
 
 type GameSceneProps = {
@@ -27,6 +29,9 @@ type GameSceneProps = {
   keyboardRef: MutableRefObject<KeyboardState>;
   onSpeedChange: (value: number) => void;
   onDistanceChange: (value: number) => void;
+  onNitroChange: (value: number) => void;
+  onScoreChange: (value: number) => void;
+  onBestChange: (value: number) => void;
 };
 
 type TrafficCarData = {
@@ -409,6 +414,9 @@ function SceneContents({
   keyboardRef,
   onSpeedChange,
   onDistanceChange,
+  onNitroChange,
+  onScoreChange,
+  onBestChange,
 }: GameSceneProps) {
   const playerCarRef = useRef<THREE.Group | null>(null);
   const speedRef = useRef(0);
@@ -424,6 +432,13 @@ function SceneContents({
     Array.from({ length: 6 }, (_, index) => createTrafficCar(index)),
   );
   const collisionCooldownRef = useRef(0);
+  const nitroRef = useRef(1);
+  const scoreRef = useRef(0);
+  const bestRef = useRef(loadBest());
+  const lastUiNitroRef = useRef(-1);
+  const lastUiScoreRef = useRef(-1);
+  const lastUiBestRef = useRef(-1);
+  const pickupCooldownRef = useRef(0);
 
   const laneMarkers = useMemo(() => {
     const markers: Array<{ key: string; x: number; z: number }> = [];
@@ -450,6 +465,8 @@ function SceneContents({
 
     const isRunning = gamePhase === 'running';
     const keys = keyboardRef.current;
+    const nitroActive = isRunning && keys.nitro && nitroRef.current > 0.02;
+    unlockAudio();
     const frameDelta = Math.min(delta, 0.033);
     const accelForce = keys.accelerate ? 54 : 17;
     const brakeForce = keys.brake ? 72 : 0;
@@ -460,8 +477,16 @@ function SceneContents({
       speedRef.current += accelForce * frameDelta;
       speedRef.current -= brakeForce * frameDelta;
       speedRef.current -= 10.5 * frameDelta;
-      speedRef.current = clamp(speedRef.current, 0, 248);
+      if (nitroActive) {
+        nitroRef.current = Math.max(0, nitroRef.current - frameDelta * 0.42);
+        speedRef.current += 82 * frameDelta;
+      } else {
+        nitroRef.current = Math.min(1, nitroRef.current + frameDelta * 0.045);
+      }
+      speedRef.current = clamp(speedRef.current, 0, nitroActive ? 320 : 248);
       distanceRef.current += (speedRef.current / 3.6) * frameDelta;
+      scoreRef.current += (speedRef.current / 3.6) * frameDelta * (nitroActive ? 0.55 : 0.35);
+      pickupCooldownRef.current = Math.max(0, pickupCooldownRef.current - frameDelta);
       curveRef.current = THREE.MathUtils.lerp(
         curveRef.current,
         getCurveOffset(distanceRef.current) * 0.75,
@@ -477,7 +502,10 @@ function SceneContents({
     } else {
       speedRef.current = THREE.MathUtils.lerp(speedRef.current, 0, 0.08);
       curveRef.current = THREE.MathUtils.lerp(curveRef.current, 0, 0.08);
+      nitroRef.current = Math.min(1, nitroRef.current + frameDelta * 0.06);
     }
+
+    setEngine(Math.round(speedRef.current), nitroActive, isRunning);
 
     const difficulty = getDifficultyFactor(distanceRef.current, speedRef.current);
     const targetTrafficCount = getActiveTrafficTarget(difficulty);
@@ -559,7 +587,18 @@ function SceneContents({
           collisionCooldownRef.current <= 0
         ) {
           speedRef.current = Math.max(38, speedRef.current * 0.62);
+          scoreRef.current = Math.max(0, scoreRef.current - 25);
           collisionCooldownRef.current = 1.1;
+        } else if (
+          Math.abs(child.position.z) < 4.2 &&
+          Math.abs(child.position.x - car.position.x) < 2.05 &&
+          Math.abs(child.position.x - car.position.x) > 1.15 &&
+          collisionCooldownRef.current <= 0
+        ) {
+          scoreRef.current += 18;
+          nitroRef.current = Math.min(1, nitroRef.current + 0.06);
+          collisionCooldownRef.current = 0.35;
+          sfxNearMiss();
         }
       });
     }
@@ -568,6 +607,9 @@ function SceneContents({
 
     const roundedSpeed = Math.round(speedRef.current);
     const roundedDistance = Math.round(distanceRef.current);
+    const roundedNitro = Math.round(nitroRef.current * 100);
+    const roundedScore = Math.max(0, Math.round(scoreRef.current + distanceRef.current));
+    if (roundedScore > bestRef.current) bestRef.current = roundedScore;
 
     if (roundedSpeed !== lastUiSpeedRef.current) {
       lastUiSpeedRef.current = roundedSpeed;
@@ -577,6 +619,19 @@ function SceneContents({
     if (roundedDistance !== lastUiDistanceRef.current) {
       lastUiDistanceRef.current = roundedDistance;
       onDistanceChange(roundedDistance);
+    }
+    if (roundedNitro !== lastUiNitroRef.current) {
+      lastUiNitroRef.current = roundedNitro;
+      onNitroChange(roundedNitro);
+    }
+    if (roundedScore !== lastUiScoreRef.current) {
+      lastUiScoreRef.current = roundedScore;
+      onScoreChange(roundedScore);
+    }
+    if (bestRef.current !== lastUiBestRef.current) {
+      lastUiBestRef.current = bestRef.current;
+      onBestChange(bestRef.current);
+      saveBest(bestRef.current);
     }
   });
 
