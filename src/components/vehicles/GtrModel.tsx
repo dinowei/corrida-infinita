@@ -4,6 +4,7 @@ import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { DRACOLoader } from 'three-stdlib';
 import { MODEL_PATH } from '../../lib/game';
+import { celify, createCelMaterial } from '../../rendering/cel';
 import type { VehicleFx } from './fx';
 
 function createDracoLoader() {
@@ -20,6 +21,11 @@ export default function GtrModel({ fxRef }: { fxRef?: MutableRefObject<VehicleFx
     loader.setDRACOLoader(createDracoLoader());
   });
   const flamesRef = useRef<THREE.Group | null>(null);
+  const flameMaterial = useMemo(() => {
+    const m = createCelMaterial({ color: '#7cc7ff', unlit: true, transparent: true, opacity: 0.85, depthWrite: false, fog: false });
+    m.blending = THREE.AdditiveBlending;
+    return m;
+  }, []);
 
   const preparedScene = useMemo(() => {
     const model = gltf.scene.clone(true);
@@ -62,6 +68,8 @@ export default function GtrModel({ fxRef }: { fxRef?: MutableRefObject<VehicleFx
     const dominantLength = Math.max(finalSize.x, finalSize.z);
     const scale = dominantLength > 0 ? GTR_LENGTH / dominantLength : 1;
 
+    // Cel: troca os materiais PBR do GLB por cel com borda e contorno.
+    celify(model, { outline: true, rim: 0.7 });
     return { model, scale };
   }, [gltf.scene]);
 
@@ -83,16 +91,8 @@ export default function GtrModel({ fxRef }: { fxRef?: MutableRefObject<VehicleFx
       </group>
       <group ref={flamesRef} visible={false}>
         {[-0.42, 0.42].map((x) => (
-          <mesh key={x} position={[x, 0.3, GTR_LENGTH / 2 + 0.32]} rotation-x={Math.PI / 2}>
+          <mesh key={x} position={[x, 0.3, GTR_LENGTH / 2 + 0.32]} rotation-x={Math.PI / 2} material={flameMaterial}>
             <coneGeometry args={[0.1, 0.65, 8, 1, true]} />
-            <meshBasicMaterial
-              color="#7cc7ff"
-              transparent
-              opacity={0.85}
-              blending={THREE.AdditiveBlending}
-              depthWrite={false}
-              toneMapped={false}
-            />
           </mesh>
         ))}
       </group>

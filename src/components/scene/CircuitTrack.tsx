@@ -1,10 +1,12 @@
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
-import { createAsphaltMaps } from '../../lib/asphalt';
 import { SHOULDER } from '../../game/modes/circuitSession';
 import { sampleTrack, createSample, type TrackFrames } from '../../game/tracks';
+import type { BiomePalette } from '../../game/contracts';
+import { seededRandom } from '../../game/world/generator';
 import { GROUND_Y } from '../../game/world/scenery';
-import { createBannerTexture, createCheckerTexture, createChevronTexture } from './textures';
+import { addOutline, createCelMaterial, Outlined } from '../../rendering/cel';
+import { createBannerTexture, createCheckerTexture, createChevronTexture, createRoadTexture } from './textures';
 
 export const BARRIER_HEIGHT = 0.9;
 const BARRIER_THICK = 0.45;
@@ -97,13 +99,13 @@ function basisMatrix(track: TrackFrames, s: number, off: number, lift: number, f
   return m;
 }
 
-function useTrackGeometry(track: TrackFrames) {
+function useTrackGeometry(track: TrackFrames, palette: BiomePalette) {
   return useMemo(() => {
     const half = track.def.width / 2;
     const edge = half + SHOULDER;
     const outer = edge + BARRIER_THICK;
-    const white = new THREE.Color('#f1f5f9');
-    const red = new THREE.Color('#d61f2c');
+    const white = new THREE.Color(palette.curbB);
+    const red = new THREE.Color(palette.curbA);
     const curved = (i: number) => Math.abs(track.curvature[i]) > 1 / 170;
 
     const geos = {
@@ -159,7 +161,7 @@ function useTrackGeometry(track: TrackFrames) {
     geos.deck = buildRibbon(track, { offA: outer, liftA: -DECK_DEPTH, offB: -outer, liftB: -DECK_DEPTH });
 
     return geos;
-  }, [track]);
+  }, [palette, track]);
 }
 
 /** Junta geometrias com os mesmos atributos (posição, uv, cor opcional). */
@@ -238,53 +240,80 @@ function Instanced({
   matrices,
   geometry,
   material,
-  local,
+  outline = false,
 }: {
   matrices: THREE.Matrix4[];
   geometry: THREE.BufferGeometry;
   material: THREE.Material;
-  local?: THREE.Matrix4;
+  /** traço de casco invertido (props principais) */
+  outline?: boolean;
 }) {
   const mesh = useMemo(() => {
     const instanced = new THREE.InstancedMesh(geometry, material, Math.max(1, matrices.length));
-    const tmp = new THREE.Matrix4();
-    matrices.forEach((m, i) => instanced.setMatrixAt(i, local ? tmp.multiplyMatrices(m, local) : m));
+    matrices.forEach((m, i) => instanced.setMatrixAt(i, m));
     instanced.count = matrices.length;
     instanced.instanceMatrix.needsUpdate = true;
     instanced.computeBoundingSphere();
+    if (outline) addOutline(instanced);
     return instanced;
-  }, [geometry, local, material, matrices]);
+  }, [geometry, material, matrices, outline]);
   return <primitive object={mesh} />;
 }
 
-export default function CircuitTrack({ track, wetness = 0 }: { track: TrackFrames; wetness?: number }) {
-  const geos = useTrackGeometry(track);
+type CircuitTrackProps = {
+  track: TrackFrames;
+  palette: BiomePalette;
+  ink: string;
+  /** 0 = seco, 1 = encharcado */
+  wetness?: number;
+};
+
+export default function CircuitTrack({ track, palette, ink, wetness = 0 }: CircuitTrackProps) {
+  const geos = useTrackGeometry(track, palette);
   const inst = useInstances(track);
 
   const assets = useMemo(() => {
-    const asphalt = createAsphaltMaps();
-    asphalt.normalMap.repeat.set(3, 1);
-    asphalt.roughnessMap.repeat.set(3, 1);
-    const chevron = createChevronTexture();
+    const rand = seededRandom(track.def.seed ^ 0x5eed);
+    const road = createRoadTexture(palette.road, palette.roadDetail, ink, rand);
+    const chevron = createChevronTexture(palette.signBg, palette.signArrow, ink);
     const checker = createCheckerTexture(16, 2);
     const banner = createBannerTexture('CORRIDA INFINITA');
+    // Pista molhada: tom mais escuro, reflexo em faixas e brilho duro.
+    const wetRoad = new THREE.Color(palette.road).multiplyScalar(1 - wetness * 0.35);
     return {
-      asphalt,
-      chevron,
-      checker,
-      banner,
-      pole: new THREE.CylinderGeometry(0.09, 0.13, 8, 6).translate(0, 4, 0),
-      arm: new THREE.BoxGeometry(2.2, 0.1, 0.1).translate(-1.05, 8, 0),
-      head: new THREE.BoxGeometry(0.8, 0.14, 0.32).translate(-2, 7.93, 0),
-      sign: new THREE.PlaneGeometry(1.2, 1.2),
-      signPost: new THREE.BoxGeometry(0.08, 0.8, 0.08).translate(0, -0.6, -0.02),
+      textures: [road, chevron, checker, banner],
+      pole: new THREE.CylinderGeometry(0.11, 0.16, 8, 6).translate(0, 4, 0),
+      arm: new THREE.BoxGeometry(2.2, 0.14, 0.14).translate(-1.05, 8, 0),
+      head: new THREE.BoxGeometry(0.9, 0.18, 0.36).translate(-2, 7.9, 0),
+      sign: new THREE.PlaneGeometry(1.3, 1.3),
+      signPost: new THREE.BoxGeometry(0.1, 0.8, 0.1).translate(0, -0.6, -0.02),
       pillar: new THREE.BoxGeometry(3.2, 1, 2.2),
-      poleMat: new THREE.MeshStandardMaterial({ color: '#2b3442', metalness: 0.6, roughness: 0.4 }),
-      headMat: new THREE.MeshBasicMaterial({ color: '#fff3c4', toneMapped: false }),
-      signMat: new THREE.MeshBasicMaterial({ map: chevron, side: THREE.DoubleSide }),
-      pillarMat: new THREE.MeshStandardMaterial({ color: '#b9bec7', roughness: 0.9 }),
+      gantryPost: new THREE.BoxGeometry(0.7, 7.2, 0.7),
+      gantryBeam: new THREE.BoxGeometry(track.def.width + SHOULDER * 2 + 2, 1.6, 0.5),
+      mats: {
+        road: createCelMaterial({
+          color: wetness > 0 ? `#${wetRoad.getHexString()}` : '#ffffff',
+          map: road,
+          reflect: wetness * 0.45,
+          specular: wetness * 0.6,
+          shininess: 24,
+        }),
+        shoulder: createCelMaterial({ color: palette.shoulder }),
+        curbs: createCelMaterial({ color: '#ffffff', vertexColors: true }),
+        yellow: createCelMaterial({ color: palette.lineYellow, unlit: true }),
+        white: createCelMaterial({ color: palette.lineWhite, unlit: true }),
+        barrier: createCelMaterial({ color: palette.barrier, side: THREE.DoubleSide }),
+        deck: createCelMaterial({ color: palette.deck, side: THREE.DoubleSide }),
+        pillar: createCelMaterial({ color: palette.pillar }),
+        metal: createCelMaterial({ color: palette.metal, rim: 0.35 }),
+        lamp: createCelMaterial({ color: palette.lampGlow, unlit: true }),
+        sign: createCelMaterial({ color: '#ffffff', map: chevron, unlit: true, side: THREE.DoubleSide }),
+        checker: createCelMaterial({ color: '#ffffff', map: checker, unlit: true }),
+        banner: createCelMaterial({ color: '#ffffff', map: banner, unlit: true }),
+        gantry: createCelMaterial({ color: palette.metal, rim: 0.4 }),
+      },
     };
-  }, []);
+  }, [ink, palette, track.def.seed, track.def.width, wetness]);
 
   const startLine = useMemo(() => basisMatrix(track, 0, 0, 0.03), [track]);
   const gantry = useMemo(() => basisMatrix(track, -6, 0, 0), [track]);
@@ -293,76 +322,48 @@ export default function CircuitTrack({ track, wetness = 0 }: { track: TrackFrame
   useEffect(
     () => () => {
       Object.values(geos).forEach((g) => g.dispose());
-      assets.asphalt.normalMap.dispose();
-      assets.asphalt.roughnessMap.dispose();
-      assets.chevron.dispose();
-      assets.checker.dispose();
-      assets.banner.dispose();
+      assets.textures.forEach((t) => t.dispose());
+      Object.values(assets.mats).forEach((m) => m.dispose());
     },
     [assets, geos],
   );
 
+  const m = assets.mats;
   return (
     <group>
-      <mesh geometry={geos.road}>
-        <meshStandardMaterial
-          // Pista molhada: mais escura e mais lisa, refletindo o céu.
-          color={wetness > 0 ? "#2a2e36" : "#3a3f4a"}
-          metalness={0.1 + wetness * 0.25}
-          roughness={0.85 - wetness * 0.6}
-          envMapIntensity={1 + wetness * 1.2}
-          normalMap={assets.asphalt.normalMap}
-          normalScale={new THREE.Vector2(0.35, 0.35)}
-          roughnessMap={assets.asphalt.roughnessMap}
-        />
-      </mesh>
-      <mesh geometry={geos.shoulder}>
-        <meshStandardMaterial color="#5b616c" roughness={0.95} />
-      </mesh>
-      <mesh geometry={geos.curbs}>
-        <meshStandardMaterial vertexColors roughness={0.6} />
-      </mesh>
-      <mesh geometry={geos.yellow}>
-        <meshBasicMaterial color="#f5c518" />
-      </mesh>
-      <mesh geometry={geos.white}>
-        <meshBasicMaterial color="#eef2f7" />
-      </mesh>
-      <mesh geometry={geos.barrier}>
-        <meshStandardMaterial color="#c9ccd2" roughness={0.88} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh geometry={geos.deck}>
-        <meshStandardMaterial color="#8d939c" roughness={0.95} side={THREE.DoubleSide} />
-      </mesh>
+      <mesh geometry={geos.road} material={m.road} />
+      <mesh geometry={geos.shoulder} material={m.shoulder} />
+      <mesh geometry={geos.curbs} material={m.curbs} />
+      <mesh geometry={geos.yellow} material={m.yellow} />
+      <mesh geometry={geos.white} material={m.white} />
+      <mesh geometry={geos.barrier} material={m.barrier} />
+      <mesh geometry={geos.deck} material={m.deck} />
 
-      <Instanced matrices={inst.pillars} geometry={assets.pillar} material={assets.pillarMat} />
-      <Instanced matrices={inst.lamps} geometry={assets.pole} material={assets.poleMat} />
-      <Instanced matrices={inst.lamps} geometry={assets.arm} material={assets.poleMat} />
-      <Instanced matrices={inst.lamps} geometry={assets.head} material={assets.headMat} />
-      <Instanced matrices={inst.chevrons} geometry={assets.sign} material={assets.signMat} />
-      <Instanced matrices={inst.chevrons} geometry={assets.signPost} material={assets.poleMat} />
+      <Instanced matrices={inst.pillars} geometry={assets.pillar} material={m.pillar} outline />
+      <Instanced matrices={inst.lamps} geometry={assets.pole} material={m.metal} outline />
+      <Instanced matrices={inst.lamps} geometry={assets.arm} material={m.metal} outline />
+      <Instanced matrices={inst.lamps} geometry={assets.head} material={m.lamp} />
+      <Instanced matrices={inst.chevrons} geometry={assets.sign} material={m.sign} />
+      <Instanced matrices={inst.chevrons} geometry={assets.signPost} material={m.metal} />
 
       {/* Linha de chegada e pórtico */}
       <group matrixAutoUpdate={false} matrix={startLine}>
-        <mesh rotation-x={-Math.PI / 2}>
+        <mesh rotation-x={-Math.PI / 2} material={m.checker}>
           <planeGeometry args={[track.def.width, 2.4]} />
-          <meshBasicMaterial map={assets.checker} />
         </mesh>
       </group>
       <group matrixAutoUpdate={false} matrix={gantry}>
         {[-1, 1].map((side) => (
-          <mesh key={side} position={[side * (half + SHOULDER + 0.6), 3.6, 0]}>
-            <boxGeometry args={[0.7, 7.2, 0.7]} />
-            <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.4} />
-          </mesh>
+          <Outlined
+            key={side}
+            geometry={assets.gantryPost}
+            material={m.gantry}
+            position={[side * (half + SHOULDER + 0.6), 3.6, 0]}
+          />
         ))}
-        <mesh position={[0, 7.4, 0]}>
-          <boxGeometry args={[track.def.width + SHOULDER * 2 + 2, 1.6, 0.5]} />
-          <meshStandardMaterial color="#111827" />
-        </mesh>
-        <mesh position={[0, 7.4, 0.26]}>
+        <Outlined geometry={assets.gantryBeam} material={m.gantry} position={[0, 7.4, 0]} />
+        <mesh position={[0, 7.4, 0.27]} material={m.banner}>
           <planeGeometry args={[track.def.width + SHOULDER * 2 + 1.6, 1.4]} />
-          <meshBasicMaterial map={assets.banner} toneMapped={false} />
         </mesh>
       </group>
     </group>

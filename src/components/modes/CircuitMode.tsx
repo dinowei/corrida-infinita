@@ -202,7 +202,7 @@ export default function CircuitMode({ vehicleId }: { vehicleId: VehicleId }) {
   return (
     <>
       <CircuitScenery track={track} biome={biome} weather={weather} scenery={quality.scenery} />
-      <CircuitTrack track={track} wetness={weather.wetness} />
+      <CircuitTrack track={track} palette={biome.palette} ink={weather.light.ink} wetness={weather.wetness} />
       {weather.rain > 0 ? <RainEffect intensity={weather.rain} maxDrops={quality.rainDrops} /> : null}
       {session.rivals.map((rv, i) => (
         <group

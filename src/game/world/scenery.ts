@@ -37,7 +37,7 @@ export function buildScenery(track: TrackFrames, biome: BiomeDefinition) {
 
   const trees: THREE.Matrix4[] = [];
   const treeColors: THREE.Color[] = [];
-  const palette = biome.trees.map((c) => new THREE.Color(c));
+  const palette = biome.palette.trees.map((c) => new THREE.Color(c));
   let attempts = 0;
   while (trees.length < biome.density.trees && attempts < biome.density.trees * 10) {
     attempts += 1;
@@ -57,7 +57,7 @@ export function buildScenery(track: TrackFrames, biome: BiomeDefinition) {
 
   const buildings: THREE.Matrix4[] = [];
   const buildingColors: THREE.Color[] = [];
-  const tones = biome.buildings.map((c) => new THREE.Color(c));
+  const tones = biome.palette.buildings.map((c) => new THREE.Color(c));
   for (let i = 0; i < biome.density.buildings; i += 1) {
     const angle = rand() * Math.PI * 2;
     const dist = radius + 260 + rand() * 380;
