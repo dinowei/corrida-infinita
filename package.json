@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run test && npm run build",
+    "shoot": "node scripts/harness.mjs shoot",
+    "perf": "node scripts/harness.mjs perf"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -26,6 +28,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.183.1",
+    "playwright-core": "^1.63.0",
     "typescript": "~5.8.2",
     "vite": "^6.4.2",
     "vitest": "^3.2.7"

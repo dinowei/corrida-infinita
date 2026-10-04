@@ -15,6 +15,7 @@ import { createSample, getTrack, minimapProjection, sampleTrack, type FrameSampl
 import { VEHICLES } from '../../game/vehicles';
 import { raceKey } from '../../game/world/generator';
 import type { VehicleId } from '../../types/game';
+import { applyCameraOverride, registerPlayer } from '../../dev/cameraRig';
 import RainEffect from '../scene/RainEffect';
 import CircuitScenery from '../scene/CircuitScenery';
 import CircuitTrack from '../scene/CircuitTrack';
@@ -93,7 +94,10 @@ export default function CircuitMode({ vehicleId }: { vehicleId: VehicleId }) {
     const store = useGameStore.getState();
     store.setMinimapPath(projection.path);
     store.patchHud(session.hud());
-    if (import.meta.env.DEV) Object.assign(window, { __race: session });
+    if (import.meta.env.DEV) {
+      Object.assign(window, { __race: session });
+      registerPlayer(playerRef.current);
+    }
     return () => setEngine(0, false, false);
   }, [projection.path, session]);
 
@@ -138,10 +142,13 @@ export default function CircuitMode({ vehicleId }: { vehicleId: VehicleId }) {
       .addScaledVector(sample.tangent, -(7.4 + v * 0.018))
       .addScaledVector(sample.up, 2.7 + v * 0.006)
       .addScaledVector(sample.right, -pl.latVel * 0.08);
-    camera.position.lerp(camTarget, 1 - Math.exp(-dt * 9));
-    lookTarget.copy(carPos).addScaledVector(sample.tangent, 9).addScaledVector(sample.up, 1.1);
-    camera.lookAt(lookTarget);
-    if (camera instanceof THREE.PerspectiveCamera) {
+    const overridden = import.meta.env.DEV && applyCameraOverride(camera);
+    if (!overridden) {
+      camera.position.lerp(camTarget, 1 - Math.exp(-dt * 9));
+      lookTarget.copy(carPos).addScaledVector(sample.tangent, 9).addScaledVector(sample.up, 1.1);
+      camera.lookAt(lookTarget);
+    }
+    if (!overridden && camera instanceof THREE.PerspectiveCamera) {
       const fovTarget = 60 + Math.min(1, pl.speed / 320) * 12 + (pl.nitroActive ? 6 : 0);
       camera.fov = THREE.MathUtils.lerp(camera.fov, fovTarget, 1 - Math.exp(-dt * 4));
       camera.updateProjectionMatrix();

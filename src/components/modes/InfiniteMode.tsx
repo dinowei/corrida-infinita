@@ -21,6 +21,7 @@ import { loadBest, saveInfiniteRun } from '../../game/save';
 import { getPhase, useGameStore } from '../../game/store';
 import { VEHICLES } from '../../game/vehicles';
 import type { VehicleId } from '../../types/game';
+import { applyCameraOverride, registerPlayer } from '../../dev/cameraRig';
 import RainEffect from '../scene/RainEffect';
 import { createLightTexture } from '../scene/textures';
 import { playEvents } from './CircuitMode';
@@ -184,6 +185,7 @@ function CameraRig({
   useFrame((_, delta) => {
     const target = targetRef.current;
     if (!target || getPhase() === 'paused') return;
+    if (import.meta.env.DEV && applyCameraOverride(camera)) return;
 
     const curveInfluence = curveRef.current * 0.55;
     chaseTarget.set(
@@ -292,7 +294,10 @@ export default function InfiniteMode({ vehicleId }: { vehicleId: VehicleId }) {
   }, []);
 
   useEffect(() => {
-    if (import.meta.env.DEV) Object.assign(window, { __race: session });
+    if (import.meta.env.DEV) {
+      Object.assign(window, { __race: session });
+      registerPlayer(playerCarRef.current);
+    }
     return () => setEngine(0, false, false);
   }, [session]);
 

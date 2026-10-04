@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { BIOMES } from '../../data/biomes';
 import { RIVALS } from '../../data/rivals';
 import { WEATHER } from '../../data/weather';
-import type { ControlState } from '../../types/game';
 import type { WeatherId } from '../contracts';
-import { CircuitSession, weatherGrip } from '../modes/circuitSession';
+import { circuitAutopilot } from '../ai/autopilot';
+import { CircuitSession } from '../modes/circuitSession';
 import { InfiniteSession } from '../modes/infiniteSession';
 import { migrate } from '../save';
 import { getTrack } from '../tracks';
@@ -14,28 +14,7 @@ import { buildScenery, distanceToTrackSq } from '../world/scenery';
 
 const DT = 1 / 30;
 
-/** Piloto automático simples: segue a linha de dentro e freia antes das curvas. */
-function autopilot(session: CircuitSession): ControlState {
-  const pl = session.player;
-  const tr = session.track;
-  const v = pl.speed / 3.6;
-  const idx = Math.floor(((((pl.p + v * 1.2) % tr.length) + tr.length) % tr.length) / tr.step);
-  let k = 0;
-  for (let j = 0; j < 60; j += 3) {
-    const c = tr.curvature[(idx + j) % tr.count];
-    if (Math.abs(c) > Math.abs(k)) k = c;
-  }
-  const targetD = -Math.sign(k) * Math.min(1, Math.abs(k) * 200) * 4;
-  const steer = Math.max(-1, Math.min(1, (targetD - pl.d) * 0.35 - pl.latVel * 0.3));
-  const grip = session.vehicle.grip * weatherGrip(session.weather, pl.speed);
-  const limit = Math.sqrt((9 * grip) / Math.max(Math.abs(k), 1e-4) / 0.2) * 3.6 * 1.25;
-  return {
-    steer,
-    throttle: pl.speed < limit ? 1 : 0,
-    brake: pl.speed > limit + 15 ? 1 : 0,
-    nitro: Math.abs(k) < 1 / 400 && pl.nitro > 0.3,
-  };
-}
+const autopilot = circuitAutopilot;
 
 function runRace(weather: WeatherId = 'clear', vehicle: keyof typeof VEHICLES = 'gtr') {
   const session = new CircuitSession({
