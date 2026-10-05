@@ -30,7 +30,17 @@ function LoadingFallback() {
 function Precompile() {
   const { gl, scene, camera } = useThree();
   useEffect(() => {
+    // compile() só visita objetos visíveis; o flare do sol, chamas de nitro e
+    // afins ficam ocultos até aparecerem. Torna tudo visível só para compilar.
+    const hidden: THREE.Object3D[] = [];
+    scene.traverse((o) => {
+      if (!o.visible) {
+        hidden.push(o);
+        o.visible = true;
+      }
+    });
     gl.compile(scene, camera);
+    hidden.forEach((o) => (o.visible = false));
   }, [camera, gl, scene]);
   return null;
 }

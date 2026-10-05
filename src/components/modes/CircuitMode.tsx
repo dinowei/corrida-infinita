@@ -146,7 +146,8 @@ export default function CircuitMode({ vehicleId }: { vehicleId: VehicleId }) {
     const overridden = import.meta.env.DEV && applyCameraOverride(camera);
     if (!overridden) {
       camera.position.lerp(camTarget, 1 - Math.exp(-dt * 9));
-      lookTarget.copy(carPos).addScaledVector(sample.tangent, 7).addScaledVector(sample.up, 1.0);
+      // Olhar pouco à frente mantém o herói centralizado mesmo nas curvas.
+      lookTarget.copy(carPos).addScaledVector(sample.tangent, 4.5).addScaledVector(sample.up, 1.0);
       camera.lookAt(lookTarget);
     }
     if (!overridden && camera instanceof THREE.PerspectiveCamera) {

@@ -26,7 +26,7 @@ export const RIVALS: RivalDefinition[] = [
     topSpeed: 246,
     accel: 56,
     bias: 0.5,
-    livery: { body: '#f4f6f8', accent: '#0f2c5c', stripe: '#e0262f', glow: '#5ad1ff' },
+    livery: { body: '#e3e6ef', accent: '#0f2c5c', stripe: '#e0262f', glow: '#5ad1ff' },
   },
   {
     name: 'GRAFFITI',

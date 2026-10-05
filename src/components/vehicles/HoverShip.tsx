@@ -127,7 +127,8 @@ export default function HoverShip({ livery, fxRef, phase = 0, number = 7 }: Hove
       // Motor neon: anel na cor do brilho, núcleo branco-quente e halo aditivo.
       glow: createCelMaterial({ color: livery.glow, unlit: true }),
       core: createCelMaterial({ color: '#ffffff', unlit: true }),
-      halo: createCelMaterial({ color: livery.glow, unlit: true, edgeMask: 0 }),
+      // Borda escura do bocal: núcleo branco → anel saturado → aro de tinta (3 faixas).
+      halo: createCelMaterial({ color: '#1a0f2e', unlit: true, edgeMask: 0 }),
       // Chama cel: cones opacos de borda dura (saturado + núcleo branco), sem alfa suave.
       flame: createCelMaterial({ color: livery.glow, unlit: true, fog: false, edgeMask: 0 }),
       flameCore: createCelMaterial({ color: '#ffffff', unlit: true, fog: false, edgeMask: 0 }),
@@ -207,7 +208,7 @@ export default function HoverShip({ livery, fxRef, phase = 0, number = 7 }: Hove
             {[-1, 1].map((side) => (
               <group key={side} position={[side * 0.98, 0.32, 1.45]}>
                 <mesh geometry={geo.flame} material={materials.flame} />
-                <mesh geometry={geo.flame} material={materials.flameCore} scale={[0.5, 0.5, 0.7]} position={[0, 0, 0.01]} />
+                <mesh geometry={geo.flame} material={materials.flameCore} scale={[0.42, 0.42, 1.18]} position={[0, 0, 0.01]} />
               </group>
             ))}
           </group>

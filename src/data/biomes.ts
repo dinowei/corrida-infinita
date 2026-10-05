@@ -22,7 +22,8 @@ export const BIOMES: Record<BiomeId, BiomeDefinition> = {
       curbA: '#ef3b4f',
       curbB: '#f6f1e6',
       shoulder: '#6f6d92',
-      barrier: '#ddd6ee',
+      // Mureta um degrau abaixo do branco: os cascos dos veículos são o valor mais claro da tela.
+      barrier: '#cdc5e4',
       deck: '#a99fcc',
       pillar: '#cfc6e6',
       metal: '#38365a',

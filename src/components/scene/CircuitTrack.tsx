@@ -284,7 +284,7 @@ export default function CircuitTrack({ track, palette, ink, wetness = 0 }: Circu
     const chevron = createChevronTexture(palette.signBg, palette.signArrow, ink);
     const checker = createCheckerTexture(16, 2);
     const banner = createBannerTexture('CORRIDA INFINITA');
-    const barrierMap = createBarrierTexture(ink, palette.accent);
+    const barrierMap = createBarrierTexture(ink, palette.signArrow);
     // Pista molhada: tom mais escuro, reflexo em faixas e brilho duro.
     const wetRoad = new THREE.Color(palette.road).multiplyScalar(1 - wetness * 0.35);
     return {

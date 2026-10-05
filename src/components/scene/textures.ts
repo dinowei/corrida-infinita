@@ -80,11 +80,10 @@ export function createRoadTexture(base: string, detail: string, ink: string, ran
       const center = ((lane + 0.5) / lanes) * w;
       for (const offset of [-0.22, 0.22]) ctx.fillRect(Math.round(center + offset * (w / lanes) - 8), 0, 16, h);
     }
-    // Junta de dilatação: traço fino de tinta atravessando a pista.
-    ctx.fillStyle = ink;
-    ctx.globalAlpha = 0.35;
-    ctx.fillRect(0, 0, w, 3);
-    ctx.globalAlpha = 1;
+    // Junta de dilatação: faixa larga no tom de detalhe (não tinta: um traço
+    // fino e escuro isolado era lido como defeito de render).
+    ctx.fillStyle = detail;
+    ctx.fillRect(0, 0, w, 6);
     // Agregado: poucas pintas, um tom só.
     ctx.fillStyle = detail;
     for (let i = 0; i < 260; i += 1) {

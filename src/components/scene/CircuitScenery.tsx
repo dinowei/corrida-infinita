@@ -132,7 +132,8 @@ export default function CircuitScenery({ track, biome, weather, scenery }: Scene
   return (
     <>
       <fog attach="fog" args={[weather.fog.color, weather.fog.near, weather.fog.far]} />
-      <SkyDome style={sky} />
+      {/* cullHidden: o céu desenha depois do opaco e pula pixels cobertos pelo cenário. */}
+      <SkyDome style={sky} cullHidden />
       {sky.flare ? <SunFlare sunColor={sky.sunColor} /> : null}
 
       <mesh rotation-x={-Math.PI / 2} position={[data.center.x, GROUND_Y - 0.02, data.center.z]} material={groundMat}>
