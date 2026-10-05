@@ -14,6 +14,20 @@ export type CelifyOptions = {
    * deduzidas; o retorno é mesclado por cima.
    */
   override?: (source: THREE.Material, mesh: THREE.Mesh) => Partial<CelMaterialOptions> | void;
+  /**
+   * Opt-in: traduz PBR para destaques cel (metalness -> reflexo em faixas,
+   * roughness < 0.5 -> mancha especular; Phong.specular -> especular).
+   * Desligado por padrão: em GLB denso/high-poly isso vira "chuvisco cromado"
+   * (centenas de ilhas de reflexo, cada uma com tinta em volta).
+   */
+  pbrHighlights?: boolean;
+  /**
+   * máscara de borda dos materiais OPACOS convertidos (padrão 1). Use 0 em
+   * modelos densos para tirá-los da tinta de vincos/silhuetas do
+   * pós-processo (o casco invertido, se `outline`, continua). Transparentes
+   * ficam sempre em 0.
+   */
+  edgeMask?: 0 | 1;
   /** descarta os materiais originais após a troca (padrão false: podem ser compartilhados) */
   disposeOld?: boolean;
 };
@@ -31,7 +45,11 @@ function isConvertible(m: THREE.Material): m is ConvertibleMaterial {
 }
 
 /** deduz as opções cel a partir de um material nativo do three */
-export function celOptionsFromMaterial(src: ConvertibleMaterial, rim: number): CelMaterialOptions {
+export function celOptionsFromMaterial(
+  src: ConvertibleMaterial,
+  rim: number,
+  extra: { pbrHighlights?: boolean; edgeMask?: 0 | 1 } = {},
+): CelMaterialOptions {
   const opts: CelMaterialOptions = {
     name: src.name ? `${src.name}_cel` : undefined,
     color: src.color.clone(),
@@ -42,6 +60,8 @@ export function celOptionsFromMaterial(src: ConvertibleMaterial, rim: number): C
     side: src.side,
     rim,
     depthWrite: src.depthWrite,
+    // transparente: sempre fora do G-buffer (ver CelMaterialOptions.edgeMask)
+    edgeMask: src.transparent ? 0 : (extra.edgeMask ?? 1),
   };
 
   if ((src as THREE.MeshBasicMaterial).isMeshBasicMaterial) {
@@ -55,6 +75,8 @@ export function celOptionsFromMaterial(src: ConvertibleMaterial, rim: number): C
   opts.emissive = lit.emissive.clone();
   opts.emissiveIntensity = lit.emissiveIntensity;
   opts.flatShading = lit.flatShading;
+
+  if (!extra.pbrHighlights) return opts;
 
   if ((src as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
     const std = src as THREE.MeshStandardMaterial;
@@ -102,7 +124,7 @@ export function celify<T extends THREE.Object3D>(object: T, opts: CelifyOptions 
     if (isCelMaterial(m) || !isConvertible(m)) return m;
     const cached = converted.get(m);
     if (cached) return cached;
-    const base = celOptionsFromMaterial(m, rim);
+    const base = celOptionsFromMaterial(m, rim, { pbrHighlights: opts.pbrHighlights, edgeMask: opts.edgeMask });
     const extra = opts.override?.(m, mesh) ?? {};
     const cel = new CelMaterial({ ...base, ...extra });
     converted.set(m, cel);

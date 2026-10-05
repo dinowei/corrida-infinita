@@ -79,13 +79,18 @@ console.error = (...a: unknown[]) => {
 };
 let frames = 0;
 function frame(t: number) {
-  pipeline.render(renderer, scene, camera, { edges, vignette: Number(params.get('vig') ?? 0.25), edgeScale: Number(params.get('scale') ?? 1) }, t / 1000);
+  pipeline.render(renderer, scene, camera, { edges, vignette: Number(params.get('vig') ?? 0.25), edgeScale: Number(params.get('scale') ?? 1), depthSlopeScale: Number(params.get('slope') ?? 1) }, t / 1000);
   frames++;
   if (frames === 3) {
     const ctx = renderer.getContext();
     const W = ctx.drawingBufferWidth, H = ctx.drawingBufferHeight;
     const pts = [[0.5,0.9],[0.2,0.52],[0.5,0.1],[0.18,0.5],[0.45,0.53],[0.6,0.6],[0.8,0.65],[0.1,0.8],[0.3,0.75]];
     const px = new Uint8Array(4);
+    const all = new Uint8Array(W * H * 4);
+    ctx.readPixels(0, 0, W, H, ctx.RGBA, ctx.UNSIGNED_BYTE, all);
+    let ink = 0;
+    for (let i = 0; i < all.length; i += 4) if (all[i] + all[i + 1] + all[i + 2] < 90) ink++;
+    document.body.dataset.ink = String(ink);
     document.body.dataset.px = JSON.stringify(pts.map(([u,v]) => { ctx.readPixels(Math.floor(u*W), Math.floor(v*H), 1, 1, ctx.RGBA, ctx.UNSIGNED_BYTE, px); return Array.from(px.slice(0,3)); }));
   }
   const ctx = renderer.getContext();

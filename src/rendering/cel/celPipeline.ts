@@ -16,6 +16,16 @@ export type CelFrameOptions = {
   normalThreshold?: number;
   /** salto relativo mínimo de profundidade inversa para virar silhueta; 0.15 ≈ 15% */
   depthThreshold?: number;
+  /**
+   * silhueta só conta se o salto de profundidade inversa vencer este fator ×
+   * a inclinação local (|a-b|/2). 1 = degrau precisa ser > 2 px de rampa do
+   * plano; maior = mais conservador em ângulo rasante. Padrão 1.
+   */
+  depthSlopeScale?: number;
+  /** distância (m) onde a tinta de vincos começa a sumir. Padrão 60 */
+  creaseFadeStart?: number;
+  /** distância (m) onde a tinta de vincos sumiu de vez. Padrão 250 */
+  creaseFadeEnd?: number;
 };
 
 /*
@@ -71,6 +81,10 @@ uniform float uVignette;
 uniform float uNormalThreshold;
 uniform float uDepthThreshold;
 uniform float uDepthEps;
+uniform float uDepthSlopeScale;   // silhueta precisa vencer N× a inclinação local
+uniform float uCreaseFadeStart;   // vincos (normal) somem com a distância
+uniform float uCreaseFadeEnd;
+uniform float uFogSteps;          // névoa em degraus (celUniforms.uFogSteps)
 
 // névoa da cena, para a tinta sumir junto com a geometria
 uniform float uFogMode;     // 0 = sem, 1 = linear, 2 = exp2
@@ -90,8 +104,15 @@ float viewDepth(float d) {
 // tem 1 px: vence o lado mais PRÓXIMO da câmera; empate de profundidade
 // (vinco na mesma superfície) fica com o pixel à esquerda/abaixo
 // (forward = 1 quando q está à direita/acima).
+// "joelho" estreito em vez de step seco: perto do limiar a tinta entra
+// parcial. Isso não amolece a linha (largura continua 1 px), mas evita o
+// tracejado liga/desliga de linhas longas que oscilam em torno do limiar.
+float knee(float ratio) {
+  return clamp((ratio - 0.85) * (1.0 / 0.3), 0.0, 1.0);
+}
+
 float ownsNormalEdge(vec3 np, vec3 nq, float zp, float zq, float forward) {
-  float differs = step(uNormalThreshold, distance(np, nq));
+  float differs = knee(distance(np, nq) / uNormalThreshold);
   float rel = (zq - zp) / zp;
   float nearer = step(uDepthEps, rel);
   float tie = 1.0 - step(uDepthEps, abs(rel));
@@ -137,15 +158,30 @@ void main() {
   // Dividir por 1/z do centro torna o limiar relativo à distância (um salto
   // de 15% conta igual a 5 m ou a 500 m). Só o lado mais próximo
   // (2c - a - b > 0) marca: a silhueta pertence ao objeto da frente, 1 px.
+  //
+  // Robustez em ângulo rasante: além do limiar relativo, o salto (2c-a-b)
+  // precisa vencer uDepthSlopeScale × a inclinação local |a-b|/2 ao longo
+  // da mesma direção. Num degrau puro com o centro na borda a razão é 2; num
+  // "joelho" entre dois planos (meio-fio, borda de pista visto de lado) a
+  // inclinação domina e a razão fica < 1. Ou seja: um degrau só vira traço se
+  // for maior que ~2 px de inclinação do plano — degraus pequenos vistos de
+  // raspão (que davam o serrilhado tracejado) somem; silhuetas reais ficam.
   float c = 1.0 / z[4];
-  float d0 = 2.0 * c - 1.0 / z[3] - 1.0 / z[5];
-  float d1 = 2.0 * c - 1.0 / z[1] - 1.0 / z[7];
-  float d2 = 2.0 * c - 1.0 / z[0] - 1.0 / z[8];
-  float d3 = 2.0 * c - 1.0 / z[2] - 1.0 / z[6];
-  float depthEdge = step(uDepthThreshold, max(max(d0, d1), max(d2, d3)) / c);
+  vec4 ia = vec4(1.0 / z[3], 1.0 / z[1], 1.0 / z[0], 1.0 / z[2]);
+  vec4 ib = vec4(1.0 / z[5], 1.0 / z[7], 1.0 / z[8], 1.0 / z[6]);
+  vec4 jump = 2.0 * c - ia - ib;                 // > 0: centro é o lado da frente
+  vec4 slope = abs(ia - ib) * 0.5;
+  vec4 rRel = jump / (c * uDepthThreshold);
+  vec4 rSlope = jump / max(slope * uDepthSlopeScale, c * 1e-5);
+  vec4 ratio = min(rRel, rSlope);
+  float depthEdge = knee(max(max(ratio.x, ratio.y), max(ratio.z, ratio.w)));
 
-  // traço duro (step), suprimido perto de céu/chuva/casco invertido
-  float edge = max(normalEdge, depthEdge) * step(0.5, mask);
+  // vincos somem com a distância: ao longe as normais facetadas (CEL_FLAT
+  // via derivadas) e os triângulos finos viram ruído de 1 px; silhuetas ficam
+  float creaseFade = 1.0 - smoothstep(uCreaseFadeStart, uCreaseFadeEnd, z[4]);
+
+  // suprimido perto de céu/chuva/casco invertido
+  float edge = max(normalEdge * creaseFade, depthEdge) * step(0.5, mask);
 
   // a tinta some com a névoa, como a geometria embaixo
   float fogFactor = 0.0;
@@ -155,6 +191,8 @@ void main() {
   } else if (uFogMode > 0.5) {
     fogFactor = smoothstep(uFogNear, uFogFar, z[4]);
   }
+  // mesmos degraus que CelMaterial usa (celFogStep em glsl.ts)
+  if (uFogSteps > 0.5) fogFactor = floor(fogFactor * uFogSteps) / uFogSteps;
 
   // tinta convertida para o mesmo espaço da cor (tone mapping + sRGB)
   vec3 ink = uInkColor;
@@ -244,6 +282,10 @@ function createPipeline(width: number, height: number): EdgePipeline {
       uNormalThreshold: { value: 0.3 },
       uDepthThreshold: { value: 0.15 },
       uDepthEps: { value: 0.02 },
+      uDepthSlopeScale: { value: 1 },
+      uCreaseFadeStart: { value: 60 },
+      uCreaseFadeEnd: { value: 250 },
+      uFogSteps: celUniforms.uFogSteps,
       uFogMode: { value: 0 },
       uFogNear: { value: 1 },
       uFogFar: { value: 1000 },
@@ -361,6 +403,9 @@ export class CelPipeline {
     u.uVignette.value = opts.vignette ?? 0;
     u.uNormalThreshold.value = opts.normalThreshold ?? 0.3;
     u.uDepthThreshold.value = opts.depthThreshold ?? 0.15;
+    u.uDepthSlopeScale.value = opts.depthSlopeScale ?? 1;
+    u.uCreaseFadeStart.value = opts.creaseFadeStart ?? 60;
+    u.uCreaseFadeEnd.value = opts.creaseFadeEnd ?? 250;
     const fog = scene.fog;
     if (fog && (fog as THREE.FogExp2).isFogExp2) {
       u.uFogMode.value = 2;

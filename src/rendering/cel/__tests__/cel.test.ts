@@ -163,6 +163,41 @@ describe('CelMaterial', () => {
   });
 });
 
+describe('round 2: névoa em degraus, queda do contorno, conversor', () => {
+  it('uFogSteps é global (padrão 3) e ligado por referência no cel e no contorno', () => {
+    expect(celUniforms.uFogSteps.value).toBe(3);
+    const m = new CelMaterial();
+    expect(m.uniforms.uFogSteps).toBe(celUniforms.uFogSteps);
+    expect(m.fragmentShader).toContain('floor( fogFactor * uFogSteps )');
+    expect(m.fragmentShader).not.toContain('#include <fog_fragment>');
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(), m);
+    const om = addOutline(mesh).material as THREE.ShaderMaterial;
+    expect(om.uniforms.uFogSteps).toBe(celUniforms.uFogSteps);
+    expect(om.uniforms.uOutlineFadeStart).toBe(celUniforms.uOutlineFadeStart);
+    expect(om.uniforms.uOutlineMinScale.value).toBeCloseTo(0.35);
+    expect(om.vertexShader).toContain('uOutlineMinScale');
+  });
+
+  it('celify não inventa reflexo/especular de PBR por padrão e aceita edgeMask', () => {
+    const paint = new THREE.MeshStandardMaterial({ color: '#888', metalness: 1, roughness: 0.1 });
+    const glass = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.5 });
+    const a = new THREE.Mesh(new THREE.BoxGeometry(), paint);
+    const b = new THREE.Mesh(new THREE.BoxGeometry(), glass);
+    const g = new THREE.Group().add(a, b);
+    celify(g, { edgeMask: 0 });
+    const cel = a.material as unknown as CelMaterial;
+    expect(cel.reflectivity).toBe(0);
+    expect(cel.specular).toBe(0);
+    expect(cel.defines.CEL_REFLECT).toBeUndefined();
+    expect(cel.edgeMask).toBe(0);
+    expect((b.material as unknown as CelMaterial).edgeMask).toBe(0);
+
+    const c = new THREE.Mesh(new THREE.BoxGeometry(), paint.clone());
+    celify(c);
+    expect((c.material as unknown as CelMaterial).edgeMask).toBe(1);
+  });
+});
+
 describe('contorno e celify', () => {
   it('addOutline em InstancedMesh compartilha instanceMatrix e count', () => {
     const geo = new THREE.BoxGeometry();
@@ -189,7 +224,7 @@ describe('contorno e celify', () => {
     const body2 = new THREE.Mesh(new THREE.BoxGeometry(), paint);
     const window = new THREE.Mesh(new THREE.BoxGeometry(), glass);
     root.add(body, body2, window);
-    celify(root);
+    celify(root, { pbrHighlights: true });
 
     const cel = body.material as unknown as CelMaterial;
     expect(cel).toBeInstanceOf(CelMaterial);

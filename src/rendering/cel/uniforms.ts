@@ -36,6 +36,19 @@ export const celUniforms = {
   uInkColor: { value: new THREE.Color('#0b0d18') },
   /** espessura do traço de casco invertido, em pixels de tela (CSS px × dpr aplicado no shader) */
   uOutlinePx: { value: 2.2 },
+  /**
+   * queda do traço de casco com a distância (m, profundidade de câmera):
+   * largura constante em px até uOutlineFadeStart, encolhe até
+   * uOutlineMinScale × em uOutlineFadeEnd (evita borrões em árvores distantes)
+   */
+  uOutlineFadeStart: { value: 80 },
+  uOutlineFadeEnd: { value: 300 },
+  uOutlineMinScale: { value: 0.35 },
+  /**
+   * névoa em degraus: o fator de névoa é quantizado em N faixas duras
+   * (floor, então perto continua 0). 0 = névoa suave do three.
+   */
+  uFogSteps: { value: 3 },
   /** tamanho do drawing buffer em pixels — atualizado pelo renderer a cada quadro */
   uResolution: { value: new THREE.Vector2(1280, 720) },
   /** devicePixelRatio efetivo do renderer (gl.getPixelRatio()) — atualizado pelo CelRenderer */

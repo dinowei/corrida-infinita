@@ -35,7 +35,7 @@ export {
   DEFAULT_RAMP_STOPS,
   type RampStop,
 } from './ramp';
-export { CEL_FRAGMENT_OUTPUTS, SINGLE_FRAGMENT_OUTPUT } from './glsl';
+export { CEL_FRAGMENT_OUTPUTS, SINGLE_FRAGMENT_OUTPUT, CEL_FOG_PARS_FRAGMENT, CEL_FOG_FRAGMENT } from './glsl';
 export { CelMaterial, createCelMaterial, isCelMaterial, type CelMaterialOptions } from './celMaterial';
 export {
   SMOOTH_NORMAL_ATTRIBUTE,

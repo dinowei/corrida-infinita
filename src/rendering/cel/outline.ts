@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CEL_FRAGMENT_OUTPUTS } from './glsl';
+import { CEL_FOG_FRAGMENT, CEL_FOG_PARS_FRAGMENT, CEL_FRAGMENT_OUTPUTS } from './glsl';
 import { celUniforms } from './uniforms';
 
 /** nome do atributo com as normais suavizadas usadas para inflar o casco */
@@ -138,6 +138,9 @@ uniform vec2 uResolution;   // drawing buffer (px)
 uniform float uOutlinePx;   // espessura base em px CSS
 uniform float uPixelRatio;  // px CSS -> px do drawing buffer
 uniform float uThickness;   // multiplicador por material
+uniform float uOutlineFadeStart; // m: até aqui, largura cheia
+uniform float uOutlineFadeEnd;   // m: daqui em diante, uOutlineMinScale
+uniform float uOutlineMinScale;
 
 void main() {
   // normal suavizada -> espaço de câmera (mesma correção de escala que o
@@ -166,7 +169,11 @@ void main() {
   // perspectiva, então a largura é constante em pixels a qualquer distância.
   vec2 pxDir = ndcDir * uResolution;
   pxDir /= max(length(pxDir), 1e-6);
-  float px = uOutlinePx * uPixelRatio * uThickness;
+  // largura constante em px perto; ao longe encolhe (w = profundidade de
+  // câmera na perspectiva) para objetos pequenos não virarem borrões de tinta
+  float farScale = mix(1.0, uOutlineMinScale,
+    smoothstep(uOutlineFadeStart, uOutlineFadeEnd, gl_Position.w));
+  float px = uOutlinePx * uPixelRatio * uThickness * farScale;
   gl_Position.xy += pxDir * (px * 2.0 / uResolution) * gl_Position.w;
 
   #include <fog_vertex>
@@ -178,6 +185,7 @@ ${CEL_FRAGMENT_OUTPUTS}
 
 #include <common>
 #include <fog_pars_fragment>
+${CEL_FOG_PARS_FRAGMENT}
 #include <clipping_planes_pars_fragment>
 
 uniform vec3 uColor;
@@ -189,8 +197,8 @@ void main() {
   gl_FragColor = vec4(uColor, uOpacity);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
-  // a tinta some na névoa junto com o objeto
-  #include <fog_fragment>
+  // a tinta some na névoa junto com o objeto (nos mesmos degraus)
+  ${CEL_FOG_FRAGMENT}
 
   // máscara 0: o Sobel do pós-processo ignora a vizinhança do traço, para
   // não desenhar uma segunda linha colada ao casco invertido
@@ -215,6 +223,10 @@ export function createOutlineMaterial(opts: OutlineMaterialOptions = {}): Outlin
     uOutlinePx: celUniforms.uOutlinePx,
     uResolution: celUniforms.uResolution,
     uPixelRatio: celUniforms.uPixelRatio,
+    uOutlineFadeStart: celUniforms.uOutlineFadeStart,
+    uOutlineFadeEnd: celUniforms.uOutlineFadeEnd,
+    uOutlineMinScale: celUniforms.uOutlineMinScale,
+    uFogSteps: celUniforms.uFogSteps,
   });
 
   const mat = new THREE.ShaderMaterial({

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CEL_FRAGMENT_OUTPUTS } from './glsl';
+import { CEL_FOG_FRAGMENT, CEL_FOG_PARS_FRAGMENT, CEL_FRAGMENT_OUTPUTS } from './glsl';
 import { installDefaultRamp } from './ramp';
 import { celUniforms } from './uniforms';
 
@@ -88,6 +88,7 @@ ${CEL_FRAGMENT_OUTPUTS}
 #include <common>
 #include <color_pars_fragment>
 #include <fog_pars_fragment>
+${CEL_FOG_PARS_FRAGMENT}
 #include <clipping_planes_pars_fragment>
 
 uniform vec3 uColor;
@@ -220,7 +221,8 @@ void main() {
   // mesma ordem dos materiais nativos do three
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
-  #include <fog_fragment>
+  // névoa em degraus (celUniforms.uFogSteps; 0 = suave)
+  ${CEL_FOG_FRAGMENT}
 
   // G-buffer: normal de câmera codificada + máscara de borda
   gNormal = vec4(N * 0.5 + 0.5, uEdgeMask);
@@ -239,6 +241,7 @@ const SHARED_KEYS = [
   'uReflectSky',
   'uReflectHorizon',
   'uReflectGround',
+  'uFogSteps',
 ] as const;
 
 type CelOwnUniforms = {
