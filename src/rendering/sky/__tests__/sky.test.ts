@@ -156,3 +156,27 @@ describe('pixelAngle', () => {
     expect(pixelAngle(62, 720)).toBeCloseTo((2 * Math.tan((31 * Math.PI) / 180)) / 720, 8);
   });
 });
+
+describe('paleta explícita de faixas', () => {
+  it('clear-day usa bandPalette (uma cor por faixa, de baixo para cima)', () => {
+    const s = SKY_PRESETS['clear-day'];
+    expect(s.bandPalette).toHaveLength(s.bands);
+    const edges = [0, ...bandEdges(s), 1];
+    s.bandPalette!.forEach((hex, i) => {
+      const mid = (edges[i] + edges[i + 1]) / 2;
+      expect(key(bandColor(s, mid))).toBe(key(hexToLinear(hex)));
+    });
+  });
+
+  it('paleta com tamanho errado é ignorada (volta para a rampa)', () => {
+    const s = { ...SKY_PRESETS['clear-day'], bandPalette: ['#ff0000'] };
+    expect(key(bandColor(s, 1))).toBe(key(hexToLinear(s.zenith)));
+  });
+
+  it.each(SKY_PRESET_IDS)('%s: bandPalette, se existir, tem `bands` cores válidas', (id) => {
+    const s = SKY_PRESETS[id];
+    if (!s.bandPalette) return;
+    expect(s.bandPalette).toHaveLength(s.bands);
+    for (const c of s.bandPalette) expect(() => hexToLinear(c)).not.toThrow();
+  });
+});

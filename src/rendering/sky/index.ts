@@ -25,3 +25,13 @@ export { applySkyStyle, createSkyMaterial, createSkyUniforms, pixelAngle, type S
 export { SkyDome, type SkyDomeProps } from './SkyDome';
 export { SunFlare, type SunFlareProps } from './SunFlare';
 export { computeFlareState, FLARE_ELEMENTS, type FlareElement, type FlareState } from './flare';
+export {
+  CLOUD_ROWS,
+  cloudColumns,
+  cloudMaxHalfWidth,
+  cloudMaxReach,
+  cloudRowBase,
+  cloudRowIndex,
+  cloudRowStep,
+  cloudVisible,
+} from './clouds';

@@ -69,11 +69,16 @@ function mix3(a: Rgb, b: Rgb, k: number): Rgb {
 }
 
 /**
- * Cor CHAPADA da faixa i: horizon → upper → zenith amostrados em s = i/(n-1).
+ * Cor CHAPADA da faixa i: `bandPalette[i]` se existir; senão horizon → upper →
+ * zenith amostrados em s = i/(n-1).
  * Cada faixa é uma cor única (sem gradiente dentro da faixa).
  */
 export function bandRampColor(style: SkyStyle, index: number): Rgb {
   const n = clampBands(style.bands);
+  // paleta explícita (uma cor por faixa, de baixo para cima) tem prioridade
+  if (style.bandPalette && style.bandPalette.length === n) {
+    return hexToLinear(style.bandPalette[Math.min(n - 1, Math.max(0, index))]);
+  }
   const s = Math.min(1, Math.max(0, index / (n - 1)));
   const hz = hexToLinear(style.horizon);
   const up = hexToLinear(style.upper);

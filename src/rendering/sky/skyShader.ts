@@ -16,7 +16,23 @@
  * um pixel, calculado na CPU), que é estável e não tem costuras.
  */
 
-export const skyVertexShader = /* glsl */ `
+import {
+  CLOUD_ASPECT,
+  CLOUD_BASE_JITTER,
+  CLOUD_CELL,
+  CLOUD_HEIGHT,
+  CLOUD_MIN_PX,
+  CLOUD_ROW0,
+  CLOUD_ROW_GROWTH,
+  CLOUD_ROWS,
+  CLOUD_X_JITTER,
+  CLOUD_ZENITH_FADE,
+} from './clouds';
+
+/** número JS → literal float GLSL */
+const f = (n: number) => (Number.isInteger(n) ? n.toFixed(1) : String(n));
+
+export const skyVertexShader =/* glsl */ `
 out vec3 vDir;
 
 void main() {
@@ -45,9 +61,7 @@ uniform vec3 uInkColor;    // cor da tinta (contorno dos planetas)
 uniform float uPixelAngle; // ângulo (rad) coberto por 1 pixel no centro da tela
 
 // ---- gradiente em faixas ----
-uniform vec3 uZenith;
-uniform vec3 uUpper;
-uniform vec3 uHorizon;
+uniform vec3 uBandColors[5]; // cor chapada de cada faixa (calculada na CPU, gradient.ts)
 uniform vec3 uGround;
 uniform float uBands;      // 3..5
 uniform float uBandCurve;  // expoente da elevação
@@ -90,10 +104,24 @@ uniform float uPlanetRing[2];   // 0/1
 uniform vec3 uPlanetRingColor[2];
 #endif
 
-// distância do plano de projeção das nuvens: menor = mais "domo"
-#define CLOUD_PLANE_OFFSET 0.18
-// alongamento das nuvens na direção do vento (x)
-#define CLOUD_STRETCH vec2(0.55, 1.0)
+// constantes das nuvens (fonte: clouds.ts)
+#ifndef PI
+#define PI 3.14159265
+#endif
+#define TAU 6.28318531
+#define CLOUD_ROWS ${CLOUD_ROWS}
+#define CLOUD_G ${f(CLOUD_ROW_GROWTH)}
+#define CLOUD_ROW0 ${f(CLOUD_ROW0)}
+#define CLOUD_CELL ${f(CLOUD_CELL)}
+#define CLOUD_MIN_PX ${f(CLOUD_MIN_PX)}
+#define CLOUD_H_MIN ${f(CLOUD_HEIGHT[0])}
+#define CLOUD_H_MAX ${f(CLOUD_HEIGHT[1])}
+#define CLOUD_ASP_MIN ${f(CLOUD_ASPECT[0])}
+#define CLOUD_ASP_MAX ${f(CLOUD_ASPECT[1])}
+#define CLOUD_BASE_JITTER ${f(CLOUD_BASE_JITTER)}
+#define CLOUD_X_JITTER ${f(CLOUD_X_JITTER)}
+#define CLOUD_ZFADE_A ${f(CLOUD_ZENITH_FADE[0])}
+#define CLOUD_ZFADE_B ${f(CLOUD_ZENITH_FADE[1])}
 
 // ------------------------------------------------------------------
 // utilidades
@@ -129,20 +157,70 @@ float vnoise(vec2 p) {
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// fbm de 3 oitavas, com rotação entre oitavas para esconder a grade
-float fbm3(vec2 p) {
-  const mat2 R = mat2(1.6, 1.2, -1.2, 1.6);
-  float s = 0.5 * vnoise(p);
-  p = R * p + vec2(17.1, 9.3);
-  s += 0.25 * vnoise(p);
-  p = R * p + vec2(-5.7, 21.4);
-  s += 0.125 * vnoise(p);
-  return s / 0.875;
+
+// ------------------------------------------------------------------
+// nuvens: SDFs (negativo = dentro), unidades = radianos métricos
+// ------------------------------------------------------------------
+
+// Cúmulo de perfil. Origem no centro da BASE (base levemente festonada);
+// h = altura, w = meia-largura,
+// rnd = 3 aleatórios 0..1 (forma dos lobos).
+float cumulusSdf(vec2 p, float h, float w, vec3 rnd) {
+  // corpo: elipse achatada MAIS ESTREITA que os lobos (sem "prateleira":
+  // a base fica mais curta que a largura máxima da nuvem)
+  vec2 ab = vec2(0.8 * w, 0.3 * h);
+  vec2 pe = p - vec2(0.0, 0.12 * h);
+  float k = length(pe / ab);
+  // distância aproximada da elipse (k-1 normalizado pelo gradiente)
+  float gk = length(pe / (ab * ab));
+  float s = gk > 1e-6 ? k * (k - 1.0) / gk : -min(ab.x, ab.y);
+  // lobo central (o mais alto, toca h)
+  float rm = h * mix(0.5, 0.62, rnd.x);
+  s = min(s, length(p - vec2(w * mix(-0.18, 0.18, rnd.y), h - rm)) - rm);
+  // lobos laterais, mais baixos; o da direita some em parte das nuvens (2 lobos)
+  float rl = h * mix(0.3, 0.45, rnd.z);
+  s = min(s, length(p - vec2(-w * 0.55, rl * 0.6 + 0.12 * h)) - rl);
+  float rr = h * mix(0.28, 0.44, rnd.y) * step(0.33, rnd.x + 0.2 * rnd.z);
+  s = min(s, length(p - vec2(w * 0.55, rr * 0.6 + 0.12 * h)) - max(rr, 1e-4));
+  // base: corte quase reto com um leve festonado (arcos rasos pendurados)
+  float t = fract(p.x / (0.4 * w) + rnd.y) * 2.0 - 1.0;
+  float yCut = -0.05 * h * sqrt(max(1.0 - t * t, 0.0));
+  return max(s, yCut - p.y);
 }
 
-// rampa contínua horizonte → meio → zênite, amostrada só em pontos discretos
-vec3 bandRamp(float s) {
-  return s < 0.5 ? mix(uHorizon, uUpper, s * 2.0) : mix(uUpper, uZenith, (s - 0.5) * 2.0);
+// Teto contínuo: semiplano acima de 'base' + gomos redondos pendurados.
+// 'sh' desloca o ponto avaliado (p - sh), em unidades métricas.
+float deckField(float x, float e, float ce, float base, float nD, float rb, vec2 sh) {
+  float cw = TAU / nD;
+  float xs = x - sh.x / max(ce, 0.05);
+  float es = e - sh.y;
+  float s = base - es;
+  float ci = floor(xs / cw);
+  for (int j = -1; j <= 1; j++) {
+    float cid = ci + float(j);
+    float hr = hash12(vec2(mod(cid, nD), 91.0));
+    float r = rb * mix(0.7, 1.25, hr);
+    vec2 lp = vec2((xs - (cid + 0.5) * cw) * ce, es - base);
+    s = min(s, length(lp) - r);
+  }
+  return s;
+}
+
+// Pinta uma nuvem com 2 tons + traço: s0 = forma, s1 = forma deslocada
+// (dentro = lado iluminado), s2 = forma no ponto deslocado para o sol
+// (fora = borda virada para o sol).
+vec3 paintCloud(vec3 col, float s0, float s1, float s2, float aa) {
+  // tudo é recortado pela máscara da PRÓPRIA nuvem (inside): sombra e
+  // traço nunca saem do contorno
+  float inside = clamp(-s0 / aa + 0.5, 0.0, 1.0);
+  float lit = clamp(-s1 / aa + 0.5, 0.0, 1.0);
+  // traço: só no lado do sol, 1 tom, e só a partir de 1 px PARA DENTRO do
+  // contorno (nunca encosta na borda → não vira franja de composição)
+  float deep = clamp((-s0 - aa) / aa + 0.5, 0.0, 1.0);
+  float rim = clamp(s2 / aa + 0.5, 0.0, 1.0) * lit * deep;
+  vec3 c = mix(uCloudShadow, uCloudLit, lit);
+  c = mix(c, uCloudRim, rim);
+  return mix(col, c, inside);
 }
 
 #ifdef USE_NEBULA
@@ -188,11 +266,11 @@ void main() {
   float x = t * uBands;
   float fx = max(fwidth(x), 1e-5);
   float bi = min(floor(x), uBands - 1.0);
-  vec3 col = bandRamp(bi / (uBands - 1.0));
+  vec3 col = uBandColors[int(bi)];
   if (bi >= 1.0) {
     // transição de 1 px com a faixa de baixo (x - bi >= 1 na faixa do topo → sem efeito)
     float k = clamp((x - bi) / fx, 0.0, 1.0);
-    col = mix(bandRamp((bi - 1.0) / (uBands - 1.0)), col, k);
+    col = mix(uBandColors[int(bi) - 1], col, k);
   }
 
   // ==================================================================
@@ -331,50 +409,101 @@ void main() {
   }
 
   // ==================================================================
-  // 6. NUVENS CEL CHAPADAS
-  // Projeção num plano (d.xz / (d.y + offset)) dá a sensação de domo.
-  // fbm de 3 oitavas → limiar duro (forma). Segunda amostra deslocada para
-  // longe do sol separa lado iluminado / sombra (forma deslocada de si
-  // mesma, como uma segunda passada de marcador). Terceira amostra fina
-  // dá o traço de borda no lado do sol. Perto do horizonte a cobertura cai
-  // (formas encolhem, borda continua dura) para não esticar.
+  // 6. NUVENS CEL (cúmulos de perfil)
+  // Cada nuvem: base quase reta (leve festonado), corpo em elipse achatada
+  // e 2–3 lobos redondos por cima. Tons:
+  //   - sombra = faixa de baixo + lado oposto ao sol: é o que fica de fora
+  //     da própria forma deslocada para CIMA (e um pouco para o sol);
+  //   - traço = ponto deslocado ~3 px para o sol já é céu, só por dentro.
+  // Fileiras/células: ver clouds.ts (mesmos números). Sem fbm: só SDFs de
+  // círculo/caixa e 1 amostra de ruído para a irregularidade do traço.
+  // Bordas com 1 px via uPixelAngle (sem derivadas → ramos livres).
+  // Nuvens com menos de CLOUD_MIN_PX de altura não existem: sem lascas.
   // ==================================================================
-  // ramo só abaixo do horizonte (aí a cobertura já é 0, então derivadas
-  // indefinidas nos quads da fronteira não aparecem): economiza o fbm no chão
-  if (d.y > -0.01) {
-    float dy = max(d.y, 0.0);
-    float lo = smoothstep(uCloudAlt.x, uCloudAlt.x + 0.06, dy);
-    float hi = uCloudAlt.y >= 0.999 ? 1.0 : 1.0 - smoothstep(uCloudAlt.y - 0.12, uCloudAlt.y, dy);
-    float cov = uCloudCoverage * lo * hi * step(0.0, d.y);
-    // limiar: cobertura 0 → nada passa; cobertura 1 → quase tudo
-    float thr = mix(1.02, 0.26, cov);
+  if (uCloudCoverage > 0.001 && d.y > 0.0) {
+    float e = asin(clamp(d.y, 0.0, 1.0));
+    float az = atan(d.z, d.x);
+    float ce = cos(e);
+    float sc = max(uCloudScale, 0.05);
+    float row0 = CLOUD_ROW0 / sc;
+    float e0 = asin(clamp(uCloudAlt.x, 0.0, 0.99)) + 0.012;
+    float eTop = asin(clamp(uCloudAlt.y, 0.0, 1.0));
+    float cov = uCloudCoverage;
+    float drift = uTime * uCloudSpeed;
+    float aa = px * mix(1.8, 1.0, uCloudSharp);
 
-    vec2 p = d.xz / (dy + CLOUD_PLANE_OFFSET) * uCloudScale * CLOUD_STRETCH;
-    vec2 q = p + vec2(1.0, 0.25) * (uTime * uCloudSpeed);
-    float n0 = fbm3(q);
-    // largura da borda: 1 px (nitidez 1) até ~2 px (nitidez 0)
-    float w = max(fwidth(n0), 1e-5) * mix(1.6, 0.6, uCloudSharp);
-    float shape = smoothstep(thr - w, thr + w, n0);
+    // direção para o sol no espaço local (azimute métrico, elevação)
+    float aS = atan(uSunDir.z, uSunDir.x);
+    float eS = asin(clamp(uSunDir.y, -1.0, 1.0));
+    float dA = aS - az;
+    dA -= TAU * floor((dA + PI) / TAU);
+    vec2 toSun = normalize(vec2(dA * ce, eS - e) + vec2(0.0, 1e-4));
+    float sunSide = toSun.x >= 0.0 ? 1.0 : -1.0;
+    vec2 rimShift = toSun * (3.0 * px); // traço ~2 px por dentro (ver paintCloud)
+    float shadowK = mix(0.6, 1.4, uCloudShadowSize);
 
-    if (shape > 0.0 && uCloudCoverage > 0.001) {
-      // direção "para o sol" no plano das nuvens, com viés para o zênite
-      // (lado de cima das nuvens claro, lado de baixo escuro)
-      vec2 sunP = uSunDir.xz / (max(uSunDir.y, 0.02) + CLOUD_PLANE_OFFSET) * uCloudScale * CLOUD_STRETCH;
-      vec2 toSun = sunP - p;
-      vec2 u = toSun / max(length(toSun), 1e-3);
-      vec2 up = -p / max(length(p), 1e-3);
-      u = normalize(u + up * 0.8 + vec2(0.0, 1e-3));
+    // irregularidade de marcador (uma amostra, reaproveitada por todas)
+    float wob = vnoise(vec2(az * ce, e) * 45.0) - 0.5;
 
-      // lado iluminado: o ponto deslocado para LONGE do sol ainda é nuvem
-      float off = mix(0.08, 0.35, uCloudShadowSize);
-      float litMask = smoothstep(thr - w, thr + w, fbm3(q - u * off));
-      vec3 cc = mix(uCloudShadow, uCloudLit, litMask);
+    // ---- teto contínuo (só com cobertura alta): semiplano com gomos
+    // redondos pendurados embaixo; a faixa de baixo dos gomos é sombra
+    float deckK = smoothstep(0.6, 1.0, cov);
+    if (deckK > 0.0) {
+      float deckBase = mix(1.5, 0.28, deckK);
+      float rb = 0.055 / sc;
+      float nD = max(3.0, floor(TAU * cos(deckBase) / (rb * 1.7)));
+      float x = az + drift * 0.5;
+      vec2 offD = vec2(sunSide * 0.3, 1.0) * rb * 0.7 * shadowK;
+      float wd = wob * 0.15 * rb;
+      float s0 = deckField(x, e, ce, deckBase, nD, rb, vec2(0.0)) + wd;
+      if (s0 < 2.0 * aa) {
+        float s1 = deckField(x, e, ce, deckBase, nD, rb, offD) + wd;
+        float s2 = deckField(x, e, ce, deckBase, nD, rb, -rimShift) + wd;
+        col = paintCloud(col, s0, s1, s2, aa);
+      }
+    }
 
-      // traço de borda: o ponto deslocado um pouco PARA o sol já é céu
-      float rim = 1.0 - smoothstep(thr - w, thr + w, fbm3(q + u * 0.035));
-      cc = mix(cc, uCloudRim, rim * litMask);
-
-      col = mix(col, cc, shape);
+    // ---- fileiras de cúmulos: primeiro a de baixo (mais distante), depois
+    // a do pixel (mais perto, por cima)
+    float g = CLOUD_G;
+    float rowPix = floor(log(1.0 + max(e - e0, 0.0) * (g - 1.0) / row0) / log(g));
+    for (int k = 1; k >= 0; k--) {
+      float r = rowPix - float(k);
+      if (r < 0.0 || r > float(CLOUD_ROWS) - 1.0 || e < e0) continue;
+      float gr = pow(g, r);
+      float sr = row0 * gr;
+      float baseR = e0 + row0 * (gr - 1.0) / (g - 1.0);
+      // menos nuvens perto do zênite e fora da faixa de altitude
+      float rowCov = cov * (1.0 - smoothstep(CLOUD_ZFADE_A, CLOUD_ZFADE_B, baseR)) * step(baseR, eTop);
+      if (rowCov <= 0.0) continue;
+      float nC = max(3.0, floor(TAU * cos(min(baseR + 2.0 * sr, 1.52)) / (sr * CLOUD_CELL)));
+      float cw = TAU / nC;
+      // fileiras mais altas (mais perto) andam mais rápido: paralaxe
+      float x = az + drift * (1.0 + 0.3 * r);
+      float ci = floor(x / cw);
+      for (int j = -1; j <= 1; j++) {
+        float cid = ci + float(j);
+        vec2 hid = vec2(mod(cid, nC), r * 17.0 + 3.0);
+        float hp = hash12(hid);
+        if (hp >= rowCov) continue;
+        vec3 hh = vec3(hash12(hid + 11.1), hash12(hid + 23.7), hash12(hid + 37.3));
+        float h = sr * mix(CLOUD_H_MIN, CLOUD_H_MAX, hh.x) * mix(0.75, 1.0, cov);
+        if (h < CLOUD_MIN_PX * px) continue; // anti-lasca
+        float w = h * mix(CLOUD_ASP_MIN, CLOUD_ASP_MAX, hh.y);
+        float xc = (cid + 0.5 + (hh.z - 0.5) * CLOUD_X_JITTER) * cw;
+        float yb = baseR + sr * CLOUD_BASE_JITTER * fract(hh.z * 7.31);
+        vec2 lp = vec2((x - xc) * ce, e - yb);
+        // caixa envolvente (com folga para traço e irregularidade)
+        if (lp.y < -0.06 * h - 2.0 * aa || lp.y > h * 1.1 + 2.0 * aa || abs(lp.x) > w * 1.1 + 2.0 * aa) continue;
+        vec3 rnd = vec3(hp / max(rowCov, 1e-3), fract(hh.y * 13.7), fract(hh.x * 29.3));
+        // irregularidade só nos lobos: a base continua reta
+        float wa = wob * 0.08 * h * smoothstep(0.0, 0.35 * h, lp.y);
+        vec2 off = vec2(sunSide * 0.12, 0.24) * h * shadowK;
+        float s0 = cumulusSdf(lp, h, w, rnd) + wa;
+        float s1 = cumulusSdf(lp - off, h, w, rnd) + wa;
+        float s2 = cumulusSdf(lp + rimShift, h, w, rnd) + wa;
+        col = paintCloud(col, s0, s1, s2, aa);
+      }
     }
   }
 

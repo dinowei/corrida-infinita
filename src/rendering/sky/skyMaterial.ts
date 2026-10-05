@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { celUniforms } from '../cel/uniforms';
-import { clampBands, DEFAULT_BAND_CURVE, DEFAULT_SUN_BULGE } from './gradient';
+import { bandRampColor, clampBands, DEFAULT_BAND_CURVE, DEFAULT_SUN_BULGE } from './gradient';
 import { skyFragmentShader, skyVertexShader } from './skyShader';
 import type { SkyStyle } from './types';
 
@@ -26,9 +26,7 @@ export function createSkyUniforms() {
     uInkColor: celUniforms.uInkColor,
     uPixelAngle: { value: 0.0015 },
 
-    uZenith: { value: c() },
-    uUpper: { value: c() },
-    uHorizon: { value: c() },
+    uBandColors: { value: [c(), c(), c(), c(), c()] },
     uGround: { value: c() },
     uBands: { value: 4 },
     uBandCurve: { value: DEFAULT_BAND_CURVE },
@@ -87,9 +85,11 @@ export function createSkyMaterial(style?: SkyStyle): SkyMaterial {
 /** Copia um SkyStyle para os uniforms. Recompila só se os recursos mudarem. */
 export function applySkyStyle(material: THREE.ShaderMaterial, style: SkyStyle): void {
   const u = material.uniforms as SkyUniforms;
-  u.uZenith.value.set(style.zenith);
-  u.uUpper.value.set(style.upper);
-  u.uHorizon.value.set(style.horizon);
+  // cores das faixas calculadas no espelho TS (mesma regra dos testes)
+  for (let i = 0; i < 5; i += 1) {
+    const [r, g, b] = bandRampColor(style, Math.min(i, clampBands(style.bands) - 1));
+    u.uBandColors.value[i].setRGB(r, g, b, THREE.LinearSRGBColorSpace);
+  }
   u.uGround.value.set(style.ground);
   u.uBands.value = clampBands(style.bands);
   u.uBandCurve.value = style.bandCurve ?? DEFAULT_BAND_CURVE;

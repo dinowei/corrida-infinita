@@ -7,11 +7,14 @@
 export type HexColor = string;
 
 export type SkyCloudStyle = {
-  /** fração do céu coberta por nuvens, 0..1 */
+  /**
+   * 0..1: chance de cada célula ter um cúmulo (e o tamanho deles).
+   * Acima de 0.6 aparece também um teto contínuo com gomos (nublado).
+   */
   coverage: number;
-  /** escala do ruído no plano de projeção (maior = nuvens menores) */
+  /** maior = nuvens menores e mais numerosas (fileiras mais baixas; ver clouds.ts) */
   scale: number;
-  /** velocidade de deriva (unidades do plano por segundo) */
+  /** deriva em azimute (rad/s) da fileira 0; fileiras mais altas andam mais rápido */
   speed: number;
   /** tom do lado iluminado (virado para o sol) */
   litColor: HexColor;
@@ -21,9 +24,9 @@ export type SkyCloudStyle = {
   rimColor: HexColor;
   /** faixa de elevação (d.y, 0 = horizonte, 1 = zênite) onde há nuvens: [mín, máx] */
   altitude: [number, number];
-  /** 0..1: 1 = borda de 1 px, 0 = borda um pouco mais larga (~2 px) */
+  /** 0..1: 1 = borda de 1 px, 0 = borda de ~1.8 px */
   sharpness: number;
-  /** espessura da sombra (0..1, deslocamento da segunda amostra) */
+  /** 0..1: espessura da faixa de sombra na base (e no lado oposto ao sol) */
   shadowSize?: number;
 };
 
@@ -59,6 +62,11 @@ export type SkyStyle = {
   horizon: HexColor;
   /** cor chapada abaixo do horizonte */
   ground: HexColor;
+  /**
+   * Opcional: uma cor por faixa, do horizonte ao zênite (tamanho = bands).
+   * Evita o cinza/lavanda que a interpolação horizonte quente → azul gera.
+   */
+  bandPalette?: HexColor[];
   /** número de faixas duras entre horizonte e zênite (3..5) */
   bands: number;
   /**
