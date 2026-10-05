@@ -6,7 +6,13 @@ import type { BiomePalette } from '../../game/contracts';
 import { seededRandom } from '../../game/world/generator';
 import { GROUND_Y } from '../../game/world/scenery';
 import { addOutline, createCelMaterial, Outlined } from '../../rendering/cel';
-import { createBannerTexture, createCheckerTexture, createChevronTexture, createRoadTexture } from './textures';
+import {
+  createBannerTexture,
+  createBarrierTexture,
+  createCheckerTexture,
+  createChevronTexture,
+  createRoadTexture,
+} from './textures';
 
 export const BARRIER_HEIGHT = 0.9;
 const BARRIER_THICK = 0.45;
@@ -278,10 +284,11 @@ export default function CircuitTrack({ track, palette, ink, wetness = 0 }: Circu
     const chevron = createChevronTexture(palette.signBg, palette.signArrow, ink);
     const checker = createCheckerTexture(16, 2);
     const banner = createBannerTexture('CORRIDA INFINITA');
+    const barrierMap = createBarrierTexture(ink, palette.accent);
     // Pista molhada: tom mais escuro, reflexo em faixas e brilho duro.
     const wetRoad = new THREE.Color(palette.road).multiplyScalar(1 - wetness * 0.35);
     return {
-      textures: [road, chevron, checker, banner],
+      textures: [road, chevron, checker, banner, barrierMap],
       pole: new THREE.CylinderGeometry(0.11, 0.16, 8, 6).translate(0, 4, 0),
       arm: new THREE.BoxGeometry(2.2, 0.14, 0.14).translate(-1.05, 8, 0),
       head: new THREE.BoxGeometry(0.9, 0.18, 0.36).translate(-2, 7.9, 0),
@@ -297,18 +304,20 @@ export default function CircuitTrack({ track, palette, ink, wetness = 0 }: Circu
           reflect: wetness * 0.45,
           specular: wetness * 0.6,
           shininess: 24,
+          edgeMask: 0,
         }),
-        shoulder: createCelMaterial({ color: palette.shoulder }),
-        curbs: createCelMaterial({ color: '#ffffff', vertexColors: true }),
-        yellow: createCelMaterial({ color: palette.lineYellow, unlit: true }),
-        white: createCelMaterial({ color: palette.lineWhite, unlit: true }),
-        barrier: createCelMaterial({ color: palette.barrier, side: THREE.DoubleSide }),
+        // Peças coplanares do chão não recebem traço: o contraste de cor já separa.
+        shoulder: createCelMaterial({ color: palette.shoulder, edgeMask: 0 }),
+        curbs: createCelMaterial({ color: '#ffffff', vertexColors: true, edgeMask: 0 }),
+        yellow: createCelMaterial({ color: palette.lineYellow, unlit: true, edgeMask: 0 }),
+        white: createCelMaterial({ color: palette.lineWhite, unlit: true, edgeMask: 0 }),
+        barrier: createCelMaterial({ color: palette.barrier, map: barrierMap, side: THREE.DoubleSide }),
         deck: createCelMaterial({ color: palette.deck, side: THREE.DoubleSide }),
         pillar: createCelMaterial({ color: palette.pillar }),
         metal: createCelMaterial({ color: palette.metal, rim: 0.35 }),
         lamp: createCelMaterial({ color: palette.lampGlow, unlit: true }),
         sign: createCelMaterial({ color: '#ffffff', map: chevron, unlit: true, side: THREE.DoubleSide }),
-        checker: createCelMaterial({ color: '#ffffff', map: checker, unlit: true }),
+        checker: createCelMaterial({ color: '#ffffff', map: checker, unlit: true, edgeMask: 0 }),
         banner: createCelMaterial({ color: '#ffffff', map: banner, unlit: true }),
         gantry: createCelMaterial({ color: palette.metal, rim: 0.4 }),
       },

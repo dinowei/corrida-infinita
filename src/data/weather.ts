@@ -11,7 +11,8 @@ export const WEATHER: Record<WeatherId, WeatherDefinition> = {
     // Névoa no tom do horizonte do céu: o cenário distante "entra" no céu.
     fog: { color: '#e9e6d6', near: 260, far: 1700 },
     light: {
-      sunDir: [0.45, 0.62, -0.64],
+      // Sol atrás e à direita da câmera na reta principal: o jogador vê o lado iluminado.
+      sunDir: [0.5, 0.62, 0.6],
       sun: '#fff6e2',
       shadowTint: '#5547a6',
       skyAmbient: '#9fd0ff',
@@ -34,7 +35,7 @@ export const WEATHER: Record<WeatherId, WeatherDefinition> = {
     skyPreset: 'rain-light',
     fog: { color: '#8e98a8', near: 40, far: 340 },
     light: {
-      sunDir: [0.2, 0.8, -0.55],
+      sunDir: [0.3, 0.8, 0.5],
       sun: '#c9d3e2',
       shadowTint: '#3b4566',
       skyAmbient: '#8696b3',

@@ -59,51 +59,169 @@ export function createChevronTexture(bg = '#22213a', arrow = '#ff7a1a', ink = '#
 }
 
 /**
- * Asfalto cel: cor chapada com pintas, remendos e rachaduras traçadas como
- * nanquim fino. Ladrilha em U (largura da pista) e V (cada 10 m). Semente
- * fixa: a mesma pista sempre tem o mesmo asfalto.
+ * Asfalto cel: cor chapada, sem ruído de luminância (que a rampa
+ * transformaria em manchas). Só três elementos desenhados à mão:
+ * - faixas de desgaste dos pneus, um tom mais escuro, ao longo das faixas;
+ * - uma junta de dilatação transversal a cada ladrilho (lê velocidade);
+ * - pintas finas e esparsas do agregado.
+ * U = largura inteira da pista (4 faixas), V = 10 m.
  */
 export function createRoadTexture(base: string, detail: string, ink: string, rand: () => number) {
-  const size = 512;
-  const texture = canvasTexture(size, size, (ctx) => {
+  const w = 512;
+  const h = 512;
+  const texture = canvasTexture(w, h, (ctx) => {
     ctx.fillStyle = base;
-    ctx.fillRect(0, 0, size, size);
-    // Remendos: retângulos levemente mais claros com borda dura.
+    ctx.fillRect(0, 0, w, h);
+    // Desgaste dos pneus: 2 trilhas retas por faixa, borda dura, só nas faixas
+    // internas (some perto dos acostamentos, que quase não são usados).
     ctx.fillStyle = detail;
-    for (let i = 0; i < 5; i += 1) {
-      const w = 40 + rand() * 90;
-      const h = 30 + rand() * 120;
-      ctx.fillRect(rand() * (size - w), rand() * (size - h), w, h);
+    const lanes = 4;
+    for (let lane = 1; lane < lanes - 1; lane += 1) {
+      const center = ((lane + 0.5) / lanes) * w;
+      for (const offset of [-0.22, 0.22]) ctx.fillRect(Math.round(center + offset * (w / lanes) - 8), 0, 16, h);
     }
-    // Pintas de agregado: pontos duros, 2 tons.
-    for (let i = 0; i < 900; i += 1) {
-      ctx.fillStyle = rand() > 0.5 ? detail : ink;
-      ctx.globalAlpha = rand() > 0.5 ? 0.55 : 0.25;
-      const r = 1 + Math.floor(rand() * 2);
-      ctx.fillRect(Math.floor(rand() * size), Math.floor(rand() * size), r, r);
-    }
+    // Junta de dilatação: traço fino de tinta atravessando a pista.
+    ctx.fillStyle = ink;
+    ctx.globalAlpha = 0.35;
+    ctx.fillRect(0, 0, w, 3);
     ctx.globalAlpha = 1;
-    // Rachaduras: polilinhas finas em tinta, curtas e quebradas.
-    ctx.strokeStyle = ink;
-    ctx.globalAlpha = 0.55;
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 7; i += 1) {
-      let x = rand() * size;
-      let y = rand() * size;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      for (let k = 0; k < 4; k += 1) {
-        x += (rand() - 0.5) * 60;
-        y += (rand() - 0.2) * 50;
-        ctx.lineTo(x, y);
-      }
-      ctx.stroke();
+    // Agregado: poucas pintas, um tom só.
+    ctx.fillStyle = detail;
+    for (let i = 0; i < 260; i += 1) {
+      ctx.fillRect(Math.floor(rand() * w), Math.floor(rand() * h), 2, 2);
     }
-    ctx.globalAlpha = 1;
   });
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.anisotropy = 8;
+  return texture;
+}
+
+/** Mureta: faixa de tinta nas bordas, faixa de acento e juntas verticais a cada 4 m. */
+export function createBarrierTexture(ink: string, accent: string) {
+  const texture = canvasTexture(64, 256, (ctx) => {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 64, 256);
+    ctx.fillStyle = ink;
+    ctx.fillRect(0, 0, 5, 256);
+    ctx.fillRect(59, 0, 5, 256);
+    // Faixa pintada de acento no meio do perfil (quebra a massa clara da mureta).
+    ctx.fillStyle = accent;
+    ctx.fillRect(24, 0, 12, 256);
+    ctx.fillStyle = ink;
+    ctx.globalAlpha = 0.45;
+    ctx.fillRect(0, 0, 64, 3);
+    ctx.fillRect(0, 128, 64, 3);
+    ctx.globalAlpha = 1;
+  });
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.NearestFilter;
+  return texture;
+}
+
+/**
+ * Chão: manchas orgânicas grandes em 2–3 tons, borda dura (formadas por
+ * círculos sobrepostos, sem degradê). Ladrilha; repete a cada ~200 m.
+ */
+export function createGroundTexture(base: string, tones: string[], rand: () => number) {
+  const size = 512;
+  const texture = canvasTexture(size, size, (ctx) => {
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, size, size);
+    for (let blob = 0; blob < 22; blob += 1) {
+      ctx.fillStyle = tones[blob % tones.length];
+      const cx = rand() * size;
+      const cy = rand() * size;
+      const r = 18 + rand() * 46;
+      // Cada mancha = 4–7 círculos; desenhada também nas bordas opostas para ladrilhar sem emenda.
+      const parts = 4 + Math.floor(rand() * 4);
+      const circles = Array.from({ length: parts }, () => [cx + (rand() - 0.5) * r * 2, cy + (rand() - 0.5) * r, r * (0.5 + rand() * 0.6)]);
+      for (const dx of [-size, 0, size]) {
+        for (const dy of [-size, 0, size]) {
+          ctx.beginPath();
+          for (const [x, y, rr] of circles) {
+            ctx.moveTo(x + dx + rr, y + dy);
+            ctx.arc(x + dx, y + dy, rr, 0, Math.PI * 2);
+          }
+          ctx.fill();
+        }
+      }
+    }
+  });
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 8;
+  return texture;
+}
+
+/**
+ * Decalques da nave, projetados de cima (UV do casco = plano XZ): linhas de
+ * painel em tinta, faixa de corrida, número de competição num círculo e
+ * marcas de aviso. `seed` varia o número e o arranjo.
+ */
+export function createHullDecalTexture(body: string, stripe: string, ink: string, number: number) {
+  // A cor do corpo vai na própria textura (o material fica branco), senão a
+  // multiplicação tingiria faixa e número com a cor da pintura.
+  const texture = canvasTexture(256, 384, (ctx) => {
+    ctx.fillStyle = body;
+    ctx.fillRect(0, 0, 256, 384);
+    // Linhas de painel (o casco vai de y=0 na traseira a y=384 no nariz).
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 3;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.moveTo(40, 300);
+    ctx.lineTo(128, 360);
+    ctx.lineTo(216, 300);
+    ctx.moveTo(30, 150);
+    ctx.lineTo(226, 150);
+    ctx.moveTo(60, 60);
+    ctx.lineTo(60, 150);
+    ctx.moveTo(196, 60);
+    ctx.lineTo(196, 150);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    // Faixa dupla de corrida.
+    ctx.fillStyle = stripe;
+    ctx.fillRect(98, 0, 22, 384);
+    ctx.fillRect(136, 0, 22, 384);
+    // Número de competição.
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(128, 230, 38, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = ink;
+    ctx.font = 'italic 900 44px Orbitron, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(number).padStart(2, '0'), 128, 232);
+    // Marcas de aviso (chevrons pretos/amarelos) na traseira.
+    for (let i = 0; i < 6; i += 1) {
+      ctx.fillStyle = i % 2 === 0 ? '#ffd23f' : ink;
+      ctx.fillRect(20 + i * 12, 14, 12, 18);
+      ctx.fillRect(164 + i * 12, 14, 12, 18);
+    }
+  });
+  // Canvas y=0 = traseira (v=0); sem flip para casar com a UV do casco.
+  texture.flipY = false;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  return texture;
+}
+
+/** Sombra de contato: elipse chapada de borda dura (sem degradê). */
+export function createContactShadowTexture() {
+  const texture = canvasTexture(128, 128, (ctx) => {
+    ctx.clearRect(0, 0, 128, 128);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.ellipse(64, 64, 60, 60, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
   return texture;
 }
 
@@ -162,15 +280,16 @@ export function createWindowTexture(windows: string[], ink: string, rand: () => 
   const texture = canvasTexture(128, 256, (ctx) => {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, 128, 256);
-    for (let y = 10; y < 250; y += 14) {
-      for (let x = 8; x < 124; x += 16) {
+    // Grade grossa (4 colunas): janelas grandes não viram moiré à distância.
+    for (let y = 12; y < 248; y += 24) {
+      for (let x = 10; x < 120; x += 30) {
         const pick = rand();
         ctx.fillStyle = windows[Math.floor(pick * windows.length)];
-        ctx.fillRect(x, y, 10, 8);
+        ctx.fillRect(x, y, 18, 14);
         // reflexo duro: um traço claro no canto da janela
         if (pick > 0.6) {
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(x + 1, y + 1, 3, 2);
+          ctx.fillRect(x + 2, y + 2, 5, 3);
         }
       }
     }

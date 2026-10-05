@@ -91,5 +91,24 @@ export function buildScenery(track: TrackFrames, biome: BiomeDefinition) {
     );
   }
 
-  return { trees, treeColors, buildings, buildingColors, mountains, center: new THREE.Vector3(cx, GROUND_Y, cz) };
+  // Rochas espalhadas perto da pista (quebram o chão vazio), fora da área de jogo.
+  const rocks: THREE.Matrix4[] = [];
+  let rockAttempts = 0;
+  while (rocks.length < 180 && rockAttempts < 3000) {
+    rockAttempts += 1;
+    const x = cx + (rand() * 2 - 1) * (radius + 120);
+    const z = cz + (rand() * 2 - 1) * (radius + 120);
+    const d2 = distanceToTrackSq(track, x, z);
+    if (d2 < (clearance - 3) * (clearance - 3) || d2 > 90 * 90) continue;
+    const s = 0.8 + rand() * 2.6;
+    rocks.push(
+      new THREE.Matrix4().compose(
+        new THREE.Vector3(x, GROUND_Y + s * 0.25, z),
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(rand() * 0.6, rand() * Math.PI, rand() * 0.6)),
+        new THREE.Vector3(s * (1 + rand() * 0.6), s * 0.7, s),
+      ),
+    );
+  }
+
+  return { trees, treeColors, buildings, buildingColors, mountains, rocks, center: new THREE.Vector3(cx, GROUND_Y, cz) };
 }

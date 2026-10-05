@@ -42,6 +42,9 @@ export type TrackDefinition = {
  */
 export type BiomePalette = {
   ground: string;
+  /** manchas grandes de outros tons no chão (formas orgânicas de borda dura) */
+  groundTones: string[];
+  rock: string;
   road: string;
   /** pintas/remendos do asfalto, desenhados por cima da cor chapada */
   roadDetail: string;

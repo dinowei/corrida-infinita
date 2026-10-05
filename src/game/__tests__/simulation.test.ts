@@ -121,10 +121,11 @@ describe('Mundo procedural', () => {
     expect(a.trees.length).toBeGreaterThan(biome.density.trees * 0.5);
   });
 
-  it('nenhuma árvore fica sobre a pista', () => {
-    const { trees } = buildScenery(track, biome);
+  it('nenhuma árvore ou rocha fica sobre a pista', () => {
+    const { trees, rocks } = buildScenery(track, biome);
     const minClear = track.def.width / 2 + 2.5;
-    for (const m of trees) {
+    expect(rocks.length).toBeGreaterThan(50);
+    for (const m of [...trees, ...rocks]) {
       const x = m.elements[12];
       const z = m.elements[14];
       expect(Math.sqrt(distanceToTrackSq(track, x, z))).toBeGreaterThan(minClear);

@@ -7,7 +7,7 @@ import { buildScenery, GROUND_Y } from '../../game/world/scenery';
 import { addOutline, createCelMaterial } from '../../rendering/cel';
 import { applyCelLighting } from '../../rendering/environment';
 import { SKY_PRESETS, SkyDome, SunFlare } from '../../rendering/sky';
-import { createWindowTexture } from './textures';
+import { createGroundTexture, createWindowTexture } from './textures';
 
 /**
  * Ambiente do circuito em cel: domo de céu do clima, chão chapado, floresta
@@ -88,26 +88,34 @@ export default function CircuitScenery({ track, biome, weather, scenery }: Scene
     const building = new THREE.BoxGeometry(1, 1, 1);
     const mountain = new THREE.ConeGeometry(1, 1, 6);
     const cap = new THREE.ConeGeometry(0.32, 0.3, 6).translate(0, 0.35, 0);
+    const rock = new THREE.IcosahedronGeometry(1, 0);
 
     const mats = {
       crown: createCelMaterial({ color: '#ffffff', flatShading: true }),
       trunk: createCelMaterial({ color: palette.trunk }),
       building: createCelMaterial({ color: '#ffffff', map: windowMap }),
-      mountain: createCelMaterial({ color: palette.mountains, flatShading: true }),
-      cap: createCelMaterial({ color: palette.mountainSnow, flatShading: true }),
+      // Montanhas: sem traço interno (vincos viram riscos à distância); só a silhueta em casco invertido.
+      mountain: createCelMaterial({ color: palette.mountains, flatShading: true, edgeMask: 0 }),
+      cap: createCelMaterial({ color: palette.mountainSnow, flatShading: true, edgeMask: 0 }),
+      rock: createCelMaterial({ color: palette.rock, flatShading: true, rim: 0.3 }),
     };
 
     const meshes = [
       instanced(tree.crown, mats.crown, data.trees, data.treeColors, true),
       instanced(tree.trunk, mats.trunk, data.trees),
       instanced(building, mats.building, data.buildings, data.buildingColors, true),
-      instanced(mountain, mats.mountain, data.mountains),
+      instanced(mountain, mats.mountain, data.mountains, undefined, true),
       instanced(cap, mats.cap, data.mountains),
+      instanced(rock, mats.rock, data.rocks, undefined, true),
     ];
-    return { meshes, mats, windowMap, geometries: [tree.crown, tree.trunk, building, mountain, cap] };
+    return { meshes, mats, windowMap, geometries: [tree.crown, tree.trunk, building, mountain, cap, rock] };
   }, [data, palette, track.def.seed, weather.light.ink]);
 
-  const groundMat = useMemo(() => createCelMaterial({ color: palette.ground }), [palette.ground]);
+  const groundMat = useMemo(() => {
+    const map = createGroundTexture(palette.ground, palette.groundTones, seededRandom(track.def.seed ^ 0x6a0d));
+    map.repeat.set(20, 20);
+    return createCelMaterial({ color: '#ffffff', map, edgeMask: 0 });
+  }, [palette.ground, palette.groundTones, track.def.seed]);
 
   useEffect(
     () => () => {

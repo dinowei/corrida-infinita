@@ -11,9 +11,12 @@ export const BIOMES: Record<BiomeId, BiomeDefinition> = {
     id: 'costa-neon',
     name: 'Costa Neon',
     palette: {
-      ground: '#7cc24a',
-      road: '#3d4166',
-      roadDetail: '#4b5079',
+      ground: '#74b04c',
+      groundTones: ['#5f9a45', '#8cc25a', '#a7c96a'],
+      rock: '#8c86b8',
+      // Asfalto em valor médio: a tinta preta dos veículos precisa contrastar com ele.
+      road: '#545985',
+      roadDetail: '#4a4f79',
       lineYellow: '#ffc93c',
       lineWhite: '#f6f1e6',
       curbA: '#ef3b4f',
@@ -28,9 +31,10 @@ export const BIOMES: Record<BiomeId, BiomeDefinition> = {
       signArrow: '#ff7a1a',
       trees: ['#2f9a5b', '#43ad4f', '#1f7a57', '#5cc04a', '#279c6e'],
       trunk: '#7a4b3a',
-      buildings: ['#f6eadb', '#ffd8a8', '#c4e3ff', '#d9c6ef', '#fff3c4'],
+      // Distrito com 4 matizes (areia, coral, azul, amarelo); o acento magenta fica para placas.
+      buildings: ['#f2c48d', '#e8836f', '#7fb0f0', '#f5e08a'],
       windows: ['#3f63b8', '#5a86d6', '#2d4a8f', '#8fb6ff'],
-      mountains: '#6f7fd6',
+      mountains: '#8a96e4',
       mountainSnow: '#eef1ff',
       accent: '#ff4fd8',
     },
