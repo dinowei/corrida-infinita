@@ -160,17 +160,41 @@ const harness = {
   /** Coleta intervalos de rAF por `ms` milissegundos (aba precisa estar visível). */
   async measure(ms: number) {
     const samples: number[] = [];
+    const spikes: Array<Record<string, unknown>> = [];
+    // Tempo gasto pelo PRÓPRIO jogo no quadro (render submetido pelo pipeline):
+    // separa "o jogo travou" de "o sistema/compositor travou".
+    const st = root();
+    const realRender = st.gl.render.bind(st.gl);
+    let workMs = 0;
+    const work: number[] = [];
+    st.gl.render = (scene: THREE.Object3D, camera: THREE.Camera) => {
+      const t0 = performance.now();
+      realRender(scene, camera);
+      workMs += performance.now() - t0;
+    };
     let last = performance.now();
+    const start = last;
     const end = last + ms;
     await new Promise<void>((resolve) => {
       const f = (now: number) => {
-        samples.push(now - last);
+        const dt = now - last;
+        samples.push(dt);
+        work.push(workMs);
+        const frameWork = workMs;
+        workMs = 0;
+        // Quadros longos: registra quando aconteceram e o estado da corrida.
+        if (dt > 60) {
+          const hud = useGameStore.getState().hud;
+          spikes.push({ atMs: Math.round(now - start), dt: Math.round(dt), renderMs: +frameWork.toFixed(1), lap: hud.lap, speed: hud.speed, toast: useGameStore.getState().toast?.text ?? null });
+        }
         last = now;
         if (now < end) requestAnimationFrame(f);
         else resolve();
       };
       requestAnimationFrame(f);
     });
+    st.gl.render = realRender;
+    const w = work.slice(5).sort((a, b) => a - b);
     const s = samples.slice(5).sort((a, b) => a - b);
     const avg = s.reduce((a, b) => a + b, 0) / s.length;
     return {
@@ -180,6 +204,9 @@ const harness = {
       worstMs: +s[s.length - 1].toFixed(2),
       fps: +(1000 / avg).toFixed(1),
       hidden: document.hidden,
+      renderAvgMs: +(w.reduce((a, b) => a + b, 0) / w.length).toFixed(2),
+      renderP95Ms: +w[Math.floor(w.length * 0.95)].toFixed(2),
+      spikes,
     };
   },
 
