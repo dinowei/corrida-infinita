@@ -52,7 +52,7 @@ export const VEHICLES: Record<VehicleId, VehicleSpec> = {
     handling: 1.3,
     grip: 0.78,
     nitroBurn: 0.42,
-    colors: { body: '#eef2f7', accent: '#1f5fa8', stripe: '#d7263d', glow: '#ff4fd8' },
+    colors: { body: '#dfe3ee', accent: '#1f5fa8', stripe: '#d7263d', glow: '#ff4fd8' },
   },
   vespa: {
     id: 'vespa',

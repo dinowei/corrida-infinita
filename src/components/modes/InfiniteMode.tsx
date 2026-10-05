@@ -1,8 +1,6 @@
-import { Environment, Sky } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useEffect, useMemo, useRef, type MutableRefObject, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, type MutableRefObject, type RefObject } from 'react';
 import * as THREE from 'three';
-import type { Sky as SkyImpl } from 'three-stdlib';
 import {
   createAsphaltMaps,
   createBakedShadowTexture,
@@ -21,6 +19,11 @@ import { loadBest, saveInfiniteRun } from '../../game/save';
 import { getPhase, useGameStore } from '../../game/store';
 import { VEHICLES } from '../../game/vehicles';
 import type { VehicleId } from '../../types/game';
+import { applyCameraOverride, registerPlayer } from '../../dev/cameraRig';
+import type { CelLighting } from '../../game/contracts';
+import { celify, celUniforms } from '../../rendering/cel';
+import { applyCelLighting } from '../../rendering/environment';
+import { SKY_PRESETS, SkyDome, SunFlare } from '../../rendering/sky';
 import RainEffect from '../scene/RainEffect';
 import { createLightTexture } from '../scene/textures';
 import { playEvents } from './CircuitMode';
@@ -47,7 +50,7 @@ function AsphaltSurface() {
       <mesh rotation-x={-Math.PI / 2} position={[0, -0.001, TRACK_Z_POSITION]}>
         <planeGeometry args={[ROAD_WIDTH, TRACK_LENGTH]} />
         <meshStandardMaterial
-          color="#1a2233"
+          color="#43305e"
           metalness={0.18}
           roughness={0.82}
           normalMap={maps.normalMap}
@@ -184,6 +187,7 @@ function CameraRig({
   useFrame((_, delta) => {
     const target = targetRef.current;
     if (!target || getPhase() === 'paused') return;
+    if (import.meta.env.DEV && applyCameraOverride(camera)) return;
 
     const curveInfluence = curveRef.current * 0.55;
     chaseTarget.set(
@@ -205,46 +209,40 @@ function CameraRig({
   return null;
 }
 
-function SunsetAtmosphere({ speedRef }: { speedRef: MutableRefObject<number> }) {
-  const sunLightRef = useRef<THREE.DirectionalLight | null>(null);
-  const sunPosition = useMemo(() => new THREE.Vector3(0.37, 0.06, -0.93), []);
-  // O <Sky> do drei só lê sunPosition na montagem; atualizamos o uniform direto.
-  const skyRef = useRef<SkyImpl | null>(null);
-  const warmColor = useMemo(() => new THREE.Color('#ffb36b'), []);
-  const brightColor = useMemo(() => new THREE.Color('#ffe5b8'), []);
+/** Luz cel do pôr do sol do modo Infinito (o Circuito usa a do clima). */
+const SUNSET_LIGHT: CelLighting = {
+  sunDir: [0.37, 0.2, -0.9],
+  sun: '#ffd29a',
+  shadowTint: '#4a2a73',
+  skyAmbient: '#ff9f7a',
+  groundAmbient: '#3a2148',
+  rim: '#ffd9a0',
+  ink: '#140a1f',
+  reflectSky: '#ff8fb0',
+  reflectHorizon: '#ffd08a',
+  reflectGround: '#2a1638',
+};
 
+/**
+ * Céu cel de pôr do sol: domo em faixas + flare. O sol fica baixo à frente e
+ * sobe um pouco com a velocidade (sensação de "perseguir" o pôr do sol).
+ */
+function SunsetAtmosphere({ speedRef }: { speedRef: MutableRefObject<number> }) {
+  useEffect(() => applyCelLighting(SUNSET_LIGHT), []);
   useFrame(() => {
     const speedFactor = clamp(speedRef.current / 248, 0, 1);
-    // Sol baixo à frente e levemente à direita: pôr do sol no horizonte.
-    const elevation = THREE.MathUtils.degToRad(3.5 + speedFactor * 2.5);
+    const elevation = THREE.MathUtils.degToRad(9 + speedFactor * 3);
     const azimuth = THREE.MathUtils.degToRad(22 + speedFactor * 6);
-    sunPosition.set(
+    celUniforms.uSunDir.value.set(
       Math.sin(azimuth) * Math.cos(elevation),
       Math.sin(elevation),
       -Math.cos(azimuth) * Math.cos(elevation),
     );
-
-    skyRef.current?.material.uniforms.sunPosition.value.copy(sunPosition);
-
-    if (sunLightRef.current) {
-      sunLightRef.current.position.set(sunPosition.x * 42, Math.max(8, sunPosition.y * 42), sunPosition.z * 42);
-      sunLightRef.current.color.copy(warmColor).lerp(brightColor, speedFactor * 0.45);
-      sunLightRef.current.intensity = 1.9 + speedFactor * 0.55;
-    }
   });
-
   return (
     <>
-      <Sky
-        ref={skyRef}
-        distance={450000}
-        sunPosition={sunPosition}
-        turbidity={2.2}
-        rayleigh={3.2}
-        mieCoefficient={0.006}
-        mieDirectionalG={0.93}
-      />
-      <directionalLight ref={sunLightRef} intensity={1.75} color="#ffcf9b" position={[18, 16, -12]} />
+      <SkyDome style={SKY_PRESETS.sunset} />
+      <SunFlare sunColor={SKY_PRESETS.sunset.sunColor} />
     </>
   );
 }
@@ -269,6 +267,12 @@ export default function InfiniteMode({ vehicleId }: { vehicleId: VehicleId }) {
   const laneStripeGroupRef = useRef<THREE.Group | null>(null);
   const postGroupRef = useRef<THREE.Group | null>(null);
   const trafficGroupRef = useRef<THREE.Group | null>(null);
+  const worldRef = useRef<THREE.Group | null>(null);
+
+  // Converte a estrada e o tráfego (materiais nativos) para cel com contorno.
+  useLayoutEffect(() => {
+    if (worldRef.current) celify(worldRef.current, { outline: true, rim: 0.5 });
+  }, []);
   const bestRef = useRef(loadBest());
   const endRef = useRef({ delay: 0, reported: false });
 
@@ -292,7 +296,10 @@ export default function InfiniteMode({ vehicleId }: { vehicleId: VehicleId }) {
   }, []);
 
   useEffect(() => {
-    if (import.meta.env.DEV) Object.assign(window, { __race: session });
+    if (import.meta.env.DEV) {
+      Object.assign(window, { __race: session });
+      registerPlayer(playerCarRef.current);
+    }
     return () => setEngine(0, false, false);
   }, [session]);
 
@@ -379,25 +386,21 @@ export default function InfiniteMode({ vehicleId }: { vehicleId: VehicleId }) {
 
   return (
     <>
-      <color attach="background" args={['#08111f']} />
-      <fog attach="fog" args={['#223246', 32, 108]} />
+      <fog attach="fog" args={['#ff9a5c', 60, 220]} />
       <CameraRig targetRef={playerCarRef} speedRef={speedRef} curveRef={curveRef} nitroRef={nitroActiveRef} />
-      <ambientLight intensity={0.4} color="#aebfd4" />
-      <hemisphereLight intensity={0.22} color="#ffbc86" groundColor="#142133" />
       <SunsetAtmosphere speedRef={speedRef} />
-      <Environment preset="sunset" environmentIntensity={0.34} />
-      <AtmosphericMist speedRef={speedRef} />
+      <group ref={worldRef}>
       <AsphaltSurface />
       {/* Planície escura até o horizonte, para a estrada não flutuar no céu. */}
       <mesh rotation-x={-Math.PI / 2} position={[0, -0.06, -200]}>
         <planeGeometry args={[1200, 900]} />
-        <meshStandardMaterial color="#0c1424" roughness={1} />
+        <meshStandardMaterial color="#3a1f4f" roughness={1} />
       </mesh>
 
       {[-1, 1].map((side) => (
         <mesh key={side} position={[side * SHOULDER_OFFSET, -0.02, TRACK_Z_POSITION]}>
           <boxGeometry args={[SHOULDER_WIDTH, 0.08, TRACK_LENGTH]} />
-          <meshStandardMaterial color="#0d1626" roughness={1} />
+          <meshStandardMaterial color="#5a3a78" roughness={1} />
         </mesh>
       ))}
 
@@ -410,7 +413,7 @@ export default function InfiniteMode({ vehicleId }: { vehicleId: VehicleId }) {
             userData={{ side: Math.sign(marker.x) }}
           >
             <planeGeometry args={[0.18, 4.2]} />
-            <meshBasicMaterial color="#dbeafe" transparent opacity={0.92} />
+            <meshBasicMaterial color="#ffe2b0" />
           </mesh>
         ))}
       </group>
@@ -418,14 +421,8 @@ export default function InfiniteMode({ vehicleId }: { vehicleId: VehicleId }) {
       <group ref={postGroupRef}>
         {posts.map((post) => (
           <mesh key={post.key} position={[post.x, 0.7, post.z]} userData={{ left: post.x < 0 }}>
-            <cylinderGeometry args={[0.05, 0.05, 1.4, 10]} />
-            <meshStandardMaterial
-              color="#60a5fa"
-              emissive="#1d4ed8"
-              emissiveIntensity={1.5}
-              metalness={0.45}
-              roughness={0.28}
-            />
+            <cylinderGeometry args={[0.08, 0.08, 1.4, 6]} />
+            <meshBasicMaterial color="#5ee7ff" />
           </mesh>
         ))}
       </group>
@@ -448,11 +445,11 @@ export default function InfiniteMode({ vehicleId }: { vehicleId: VehicleId }) {
           </group>
         ))}
       </group>
+      </group>
 
       <group ref={playerCarRef}>
         <VehicleModel spec={spec} fxRef={fxRef} />
       </group>
-      {spec.kind === 'car' ? <CarHeadlights carRef={playerCarRef} speedRef={speedRef} /> : null}
       {weather.rain > 0 ? <RainEffect intensity={weather.rain} maxDrops={quality.rainDrops} /> : null}
     </>
   );

@@ -58,6 +58,35 @@ As naves são geradas em código (`HoverShip.tsx`): casco facetado, cockpit, mot
 | Pausar | Esc / P | Start | ❚❚ |
 | Desempenho | F3 | — | menu de pausa |
 
+## Direção de arte (cel / NPR)
+
+Tudo é desenhado em código, sem assets externos de render (o GT-R em GLB é o único resto, e sai no Marco 2).
+
+| Peça | Onde | O que faz |
+| --- | --- | --- |
+| Rampa de luz | `rendering/cel/ramp.ts` | half-lambert → 4 faixas duras (`NearestFilter`) |
+| `CelMaterial` | `rendering/cel/celMaterial.ts` | luz em faixas com matiz de sombra, borda Fresnel dura, especular em faixa, reflexo falso em 3 faixas (nunca cubemap), névoa em degraus |
+| Contorno | `rendering/cel/outline.ts` | casco invertido com normais suavizadas, largura constante em px, afina com a distância |
+| Traço de pós-processo | `rendering/cel/celPipeline.ts` | MRT (cor + normal/máscara + profundidade) e composite com vincos por normal e silhuetas por profundidade inversa; máscara evita duplicar o traço do casco |
+| Céu | `rendering/sky/` | domo em faixas duras, cúmulos chapados em 2 tons, sol com halo, flare gráfico, presets de clima e espaço |
+| Paleta | `data/biomes.ts`, `data/weather.ts` | paleta limitada por bioma e luz cel por clima, em dados |
+
+Perfil **Baixa** desliga o traço de pós-processo (fica o casco invertido); **Média/Alta** ligam.
+
+## Harness de screenshots e desempenho
+
+O painel de preview embutido limita a animação a ~25 FPS e não serve como medida. Use o harness (Playwright + o Chrome instalado, sem baixar navegador):
+
+```bash
+npm run shoot -- --vehicle aurora --weather rain --at 8,20 --views chase,side,rear,wide --out shots/teste
+npm run perf -- --quality low --seconds 20
+node scripts/profile.mjs --quality medium
+```
+
+- `shoot` simula a corrida em passo fixo até o instante pedido (determinístico) e captura as vistas.
+- `perf` mede numa janela visível: média, p95, pior quadro **e** o tempo de render do próprio jogo por quadro — se um quadro longo teve render curto, a travada veio de fora (ex.: área de trabalho remota).
+- `profile.mjs` desliga um subsistema por vez (céu, contornos, instâncias, pista) e mede o custo de cada um.
+
 ## Estrutura
 
 A regra de jogo não depende do render: cada modo é uma *sessão* pura (`RaceSession`) que recebe `update(dt, input)` e expõe HUD, eventos e resultado. Os componentes React só desenham o estado da sessão. Isso permite testar corridas inteiras sem navegador.

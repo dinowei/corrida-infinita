@@ -2,6 +2,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { getPhase } from '../../game/store';
+import { CEL_FRAGMENT_OUTPUTS } from '../../rendering/cel';
 
 /**
  * Chuva em GPU: cada gota é um segmento cuja posição é calculada no vertex
@@ -17,9 +18,9 @@ const vertexShader = /* glsl */ `
   uniform vec3 uCenter;
   uniform vec3 uBox;
   uniform float uLength;
-  attribute vec3 aSeed;
-  attribute float aEnd;
-  varying float vAlpha;
+  in vec3 aSeed;
+  in float aEnd;
+  out float vAlpha;
   void main() {
     vec3 origin = uCenter - uBox * 0.5;
     vec3 fall = vec3(uTime * 4.0, -uTime * 24.0, 0.0);
@@ -32,10 +33,13 @@ const vertexShader = /* glsl */ `
 `;
 
 const fragmentShader = /* glsl */ `
+  ${CEL_FRAGMENT_OUTPUTS}
   uniform float uIntensity;
-  varying float vAlpha;
+  in float vAlpha;
   void main() {
-    gl_FragColor = vec4(0.78, 0.85, 0.94, vAlpha * 0.42 * uIntensity);
+    pc_fragColor = vec4(0.82, 0.88, 0.96, vAlpha * 0.5 * uIntensity);
+    // Chuva não gera traço: alfa 0 com blending normal deixa o G-buffer intacto.
+    gNormal = vec4(0.0);
   }
 `;
 
@@ -66,6 +70,7 @@ export default function RainEffect({ intensity, maxDrops }: { intensity: number;
     g.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 3));
     g.setAttribute('aEnd', new THREE.BufferAttribute(ends, 1));
     const m = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
       vertexShader,
       fragmentShader,
       transparent: true,

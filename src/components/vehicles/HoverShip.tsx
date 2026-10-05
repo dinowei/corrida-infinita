@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useRef, type MutableRefObject, type ReactNode } from 'react';
-import { useFrame, type ThreeElements } from '@react-three/fiber';
+import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
+import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { Livery } from '../../game/contracts';
+import { createCelMaterial, Outlined } from '../../rendering/cel';
+import { createHullDecalTexture } from '../scene/textures';
+import ContactShadow from './ContactShadow';
 import type { VehicleFx } from './fx';
 
 /**
@@ -12,6 +15,8 @@ import type { VehicleFx } from './fx';
 export type HoverLivery = Livery;
 
 export const HOVER_HEIGHT = 0.5;
+/** traço dos veículos ~1.6× o do cenário: o herói precisa se separar do asfalto escuro */
+export const VEHICLE_INK = 1.6;
 
 type Geometries = ReturnType<typeof buildGeometries>;
 let sharedGeometries: Geometries | null = null;
@@ -77,9 +82,9 @@ function buildGeometries() {
   const wingStripe = new THREE.BoxGeometry(0.5, 0.08, 0.12);
   const fin = new THREE.BoxGeometry(0.06, 0.42, 0.5);
   const stripe = new THREE.BoxGeometry(0.14, 0.02, 1.9);
-  const underglow = new THREE.PlaneGeometry(2.8, 3.8);
-  underglow.rotateX(-Math.PI / 2);
-  return { hull, deck, canopy, pod, ring, nozzle, glowDisc, flame, wing, wingStripe, fin, stripe, underglow };
+  // Anel neon duro em volta do bocal (no lugar do halo de alfa suave).
+  const haloRing = new THREE.RingGeometry(0.26, 0.36, 6);
+  return { hull, deck, canopy, pod, ring, nozzle, glowDisc, flame, wing, wingStripe, fin, stripe, haloRing };
 }
 
 function getGeometries() {
@@ -87,97 +92,48 @@ function getGeometries() {
   return sharedGeometries;
 }
 
-let glowTexture: THREE.Texture | null = null;
-function getGlowTexture() {
-  if (glowTexture) return glowTexture;
-  const size = 128;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    const g = ctx.createRadialGradient(size / 2, size / 2, 2, size / 2, size / 2, size / 2);
-    g.addColorStop(0, 'rgba(255,255,255,0.9)');
-    g.addColorStop(0.4, 'rgba(255,255,255,0.3)');
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size, size);
-  }
-  glowTexture = new THREE.CanvasTexture(canvas);
-  glowTexture.colorSpace = THREE.SRGBColorSpace;
-  return glowTexture;
-}
-
-const inkMaterial = new THREE.MeshBasicMaterial({ color: '#0b0f1a', side: THREE.BackSide });
-
-function Inked({
-  geometry,
-  material,
-  outline = 1.045,
-  children,
-  ...props
-}: {
-  geometry: THREE.BufferGeometry;
-  material: THREE.Material;
-  outline?: number;
-  children?: ReactNode;
-} & ThreeElements['group']) {
-  return (
-    <group {...props}>
-      <mesh geometry={geometry} material={material} />
-      <mesh geometry={geometry} material={inkMaterial} scale={outline} />
-      {children}
-    </group>
-  );
-}
-
 type HoverShipProps = {
   livery: HoverLivery;
   fxRef?: MutableRefObject<VehicleFx>;
   /** fase da oscilação, para que naves diferentes não flutuem em sincronia */
   phase?: number;
+  /** número de competição pintado no casco */
+  number?: number;
 };
 
-export default function HoverShip({ livery, fxRef, phase = 0 }: HoverShipProps) {
+export default function HoverShip({ livery, fxRef, phase = 0, number = 7 }: HoverShipProps) {
   const geo = getGeometries();
   const bodyRef = useRef<THREE.Group | null>(null);
   const flamesRef = useRef<THREE.Group | null>(null);
 
   const materials = useMemo(() => {
-    const flat = (color: string, metalness: number, roughness: number) =>
-      new THREE.MeshStandardMaterial({ color, metalness, roughness, flatShading: true });
+    // Pintura: luz em faixas + borda Fresnel dura + especular em faixa.
+    const paint = (color: string, specular = 0.45) =>
+      createCelMaterial({ color, rim: 0.7, specular, shininess: 40, flatShading: true });
     return {
-      body: flat(livery.body, 0.35, 0.42),
-      accent: flat(livery.accent, 0.3, 0.5),
-      stripe: flat(livery.stripe, 0.2, 0.55),
-      dark: flat('#1b2130', 0.6, 0.45),
-      glass: new THREE.MeshStandardMaterial({
-        color: '#123a7a',
-        metalness: 0.4,
-        roughness: 0.08,
-        emissive: '#0b2a66',
-        emissiveIntensity: 0.6,
-        flatShading: true,
-      }),
-      glow: new THREE.MeshBasicMaterial({ color: livery.glow, toneMapped: false }),
-      flame: new THREE.MeshBasicMaterial({
-        color: livery.glow,
-        transparent: true,
-        opacity: 0.55,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        toneMapped: false,
-      }),
-      underglow: new THREE.MeshBasicMaterial({
-        map: getGlowTexture(),
-        color: livery.glow,
-        transparent: true,
-        opacity: 0.4,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
+      // Casco com decalques projetados de cima (UV do topo = plano do casco).
+      hull: (() => {
+        const decal = createHullDecalTexture(livery.body, livery.stripe, '#0d0b1e', number);
+        decal.repeat.set(0.5, 1 / 3.07);
+        decal.offset.set(0.5, 1.32 / 3.07);
+        return createCelMaterial({ color: '#ffffff', map: decal, rim: 0.7, specular: 0.45, shininess: 40, flatShading: true });
+      })(),
+      body: paint(livery.body),
+      accent: paint(livery.accent),
+      stripe: paint(livery.stripe, 0.25),
+      dark: createCelMaterial({ color: '#1b1d33', rim: 0.4 }),
+      // Vidro: reflexo falso em faixas céu/horizonte/chão, nunca cubemap.
+      glass: createCelMaterial({ color: '#1d3f8f', reflect: 0.75, specular: 0.9, shininess: 64, rim: 0.5, flatShading: true }),
+      // Motor neon: anel na cor do brilho, núcleo branco-quente e halo aditivo.
+      glow: createCelMaterial({ color: livery.glow, unlit: true }),
+      core: createCelMaterial({ color: '#ffffff', unlit: true }),
+      // Borda escura do bocal: núcleo branco → anel saturado → aro de tinta (3 faixas).
+      halo: createCelMaterial({ color: '#1a0f2e', unlit: true, edgeMask: 0 }),
+      // Chama cel: cones opacos de borda dura (saturado + núcleo branco), sem alfa suave.
+      flame: createCelMaterial({ color: livery.glow, unlit: true, fog: false, edgeMask: 0 }),
+      flameCore: createCelMaterial({ color: '#ffffff', unlit: true, fog: false, edgeMask: 0 }),
     };
-  }, [livery.accent, livery.body, livery.glow, livery.stripe]);
+  }, [livery.accent, livery.body, livery.glow, livery.stripe, number]);
 
   useEffect(
     () => () => {
@@ -198,7 +154,6 @@ export default function HoverShip({ livery, fxRef, phase = 0 }: HoverShipProps) 
       const flicker = 0.88 + Math.sin(t * 47) * 0.12;
       const length = (0.3 + thrust * 0.7 + (nitro ? 0.7 : 0)) * flicker;
       flamesRef.current.children.forEach((flame) => flame.scale.set(nitro ? 1.25 : 1, nitro ? 1.25 : 1, length));
-      materials.flame.opacity = nitro ? 0.9 : 0.45 + thrust * 0.2;
     }
   });
 
@@ -206,38 +161,42 @@ export default function HoverShip({ livery, fxRef, phase = 0 }: HoverShipProps) 
 
   return (
     <group>
-      <mesh geometry={geo.underglow} material={materials.underglow} position={[0, 0.03, 0.1]} />
+      <ContactShadow width={2.3} length={3.6} />
       <group ref={bodyRef} position={[0, HOVER_HEIGHT, 0]}>
         <group position={[0, -0.25, 0]}>
-          <Inked geometry={geo.hull} material={materials.body} />
+          <Outlined thickness={VEHICLE_INK} geometry={geo.hull} material={materials.hull} />
           <mesh geometry={geo.deck} material={materials.accent} position={[0, deckY, 0]} />
           <mesh geometry={geo.stripe} material={materials.stripe} position={[0, deckY + 0.23, 0.05]} />
-          <Inked
+          <Outlined
+                thickness={VEHICLE_INK}
             geometry={geo.canopy}
             material={materials.glass}
             position={[0, deckY + 0.18, -0.25]}
             scale={[0.36, 0.24, 0.72]}
-            outline={1.08}
           />
           {[-1, 1].map((side) => (
             <group key={side} position={[side * 0.98, 0.32, 0.5]}>
-              <Inked geometry={geo.pod} material={materials.body} />
+              <Outlined thickness={VEHICLE_INK} geometry={geo.pod} material={materials.body} />
               <mesh geometry={geo.ring} material={materials.accent} position={[0, 0, -0.35]} />
               <mesh geometry={geo.ring} material={materials.stripe} position={[0, 0, 0.3]} scale={[0.98, 0.98, 0.5]} />
               <mesh geometry={geo.nozzle} material={materials.dark} position={[0, 0, 0.82]} />
               <mesh geometry={geo.glowDisc} material={materials.glow} position={[0, 0, 0.94]} />
-              <Inked
+              <mesh geometry={geo.glowDisc} material={materials.core} position={[0, 0, 0.945]} scale={0.5} />
+              <mesh geometry={geo.haloRing} material={materials.halo} position={[0, 0, 0.95]} />
+              <Outlined
+                thickness={VEHICLE_INK}
                 geometry={geo.wing}
                 material={materials.body}
                 position={[side * 0.72, -0.08, 0.15]}
                 rotation={[0, side * -0.28, side * -0.1]}
               >
                 <mesh geometry={geo.wingStripe} material={materials.stripe} position={[side * 0.1, 0.01, 0.18]} />
-              </Inked>
+              </Outlined>
             </group>
           ))}
           {[-1, 1].map((side) => (
-            <Inked
+            <Outlined
+                thickness={VEHICLE_INK}
               key={`fin-${side}`}
               geometry={geo.fin}
               material={materials.accent}
@@ -247,12 +206,10 @@ export default function HoverShip({ livery, fxRef, phase = 0 }: HoverShipProps) 
           ))}
           <group ref={flamesRef}>
             {[-1, 1].map((side) => (
-              <mesh
-                key={`flame-${side}`}
-                geometry={geo.flame}
-                material={materials.flame}
-                position={[side * 0.98, 0.32, 1.45]}
-              />
+              <group key={side} position={[side * 0.98, 0.32, 1.45]}>
+                <mesh geometry={geo.flame} material={materials.flame} />
+                <mesh geometry={geo.flame} material={materials.flameCore} scale={[0.62, 0.62, 1.3]} position={[0, 0, 0.01]} />
+              </group>
             ))}
           </group>
         </group>

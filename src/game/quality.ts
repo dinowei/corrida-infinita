@@ -1,9 +1,9 @@
 import type { QualityLevel, QualityProfile } from './contracts';
 
 export const QUALITY: Record<QualityLevel, QualityProfile> = {
-  low: { level: 'low', label: 'Baixa', dpr: [0.75, 1], postprocessing: false, rainDrops: 500, scenery: 0.45 },
-  medium: { level: 'medium', label: 'Média', dpr: [1, 1], postprocessing: true, rainDrops: 1400, scenery: 0.75 },
-  high: { level: 'high', label: 'Alta', dpr: [1, 1.5], postprocessing: true, rainDrops: 2800, scenery: 1 },
+  low: { level: 'low', label: 'Baixa', dpr: [0.75, 1], edges: false, edgeScale: 1, rainDrops: 500, scenery: 0.45 },
+  medium: { level: 'medium', label: 'Média', dpr: [1, 1], edges: true, edgeScale: 1, rainDrops: 1400, scenery: 0.6 },
+  high: { level: 'high', label: 'Alta', dpr: [1, 1.5], edges: true, edgeScale: 1, rainDrops: 2800, scenery: 1 },
 };
 
 /**

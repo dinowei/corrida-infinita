@@ -1,11 +1,10 @@
 import { Html, PerspectiveCamera } from '@react-three/drei';
-import { Canvas } from '@react-three/fiber';
-import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing';
-import { Suspense } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
+import { Suspense, useEffect } from 'react';
 import * as THREE from 'three';
-import { WEATHER } from '../data/weather';
 import { QUALITY } from '../game/quality';
 import { useGameStore } from '../game/store';
+import { CelRenderer } from '../rendering/cel';
 import type { GameMode, VehicleId } from '../types/game';
 import CircuitMode from './modes/CircuitMode';
 import InfiniteMode from './modes/InfiniteMode';
@@ -23,10 +22,32 @@ function LoadingFallback() {
   );
 }
 
+/**
+ * Compila todos os shaders da cena assim que ela termina de carregar, em vez
+ * de na primeira vez que cada objeto aparece (chama do nitro, rival entrando
+ * na tela...) — isso causava quadros de 130–270 ms no meio da corrida.
+ */
+function Precompile() {
+  const { gl, scene, camera } = useThree();
+  useEffect(() => {
+    // compile() só visita objetos visíveis; o flare do sol, chamas de nitro e
+    // afins ficam ocultos até aparecerem. Torna tudo visível só para compilar.
+    const hidden: THREE.Object3D[] = [];
+    scene.traverse((o) => {
+      if (!o.visible) {
+        hidden.push(o);
+        o.visible = true;
+      }
+    });
+    gl.compile(scene, camera);
+    hidden.forEach((o) => (o.visible = false));
+  }, [camera, gl, scene]);
+  return null;
+}
+
 export default function GameScene({ mode, vehicleId }: GameSceneProps) {
   const isCircuit = mode === 'circuit';
   const quality = QUALITY[useGameStore((s) => s.quality)];
-  const weather = WEATHER[useGameStore((s) => s.weather)];
   return (
     <Canvas
       shadows={false}
@@ -37,20 +58,16 @@ export default function GameScene({ mode, vehicleId }: GameSceneProps) {
         // Gancho de depuração para medir custo de render no console (só em dev).
         if (import.meta.env.DEV) Object.assign(window, { __game: state });
         gl.outputColorSpace = THREE.SRGBColorSpace;
-        gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = isCircuit ? weather.exposure : 0.86;
+        // Cel: cores da paleta saem exatamente como desenhadas — sem tone mapping.
+        gl.toneMapping = THREE.NoToneMapping;
       }}
     >
       <PerspectiveCamera makeDefault position={[0, 4.2, 9]} fov={62} near={0.1} far={isCircuit ? 3000 : 600} />
       <Suspense fallback={<LoadingFallback />}>
         {isCircuit ? <CircuitMode vehicleId={vehicleId} /> : <InfiniteMode vehicleId={vehicleId} />}
+        <Precompile />
       </Suspense>
-      {quality.postprocessing ? (
-        <EffectComposer multisampling={0}>
-          <Bloom intensity={isCircuit ? 0.22 : 0.18} luminanceThreshold={0.78} luminanceSmoothing={0.3} mipmapBlur />
-          <Vignette eskil={false} offset={0.1} darkness={isCircuit ? 0.42 : 0.58} />
-        </EffectComposer>
-      ) : null}
+      <CelRenderer edges={quality.edges} edgeScale={quality.edgeScale} vignette={0.18} />
     </Canvas>
   );
 }

@@ -36,14 +36,59 @@ export type TrackDefinition = {
   checkpoints: CheckpointDefinition[];
 };
 
+/**
+ * Paleta limitada e saturada do bioma, aplicada a cenário, pista e HUD.
+ * Cores em hex sRGB; o pipeline cel cuida do sombreamento em faixas.
+ */
+export type BiomePalette = {
+  ground: string;
+  /** manchas grandes de outros tons no chão (formas orgânicas de borda dura) */
+  groundTones: string[];
+  rock: string;
+  road: string;
+  /** pintas/remendos do asfalto, desenhados por cima da cor chapada */
+  roadDetail: string;
+  lineYellow: string;
+  lineWhite: string;
+  curbA: string;
+  curbB: string;
+  shoulder: string;
+  barrier: string;
+  deck: string;
+  pillar: string;
+  metal: string;
+  lampGlow: string;
+  signBg: string;
+  signArrow: string;
+  trees: string[];
+  trunk: string;
+  buildings: string[];
+  windows: string[];
+  mountains: string;
+  mountainSnow: string;
+  accent: string;
+};
+
 export type BiomeDefinition = {
   id: BiomeId;
   name: string;
-  ground: string;
-  trees: string[];
-  buildings: string[];
-  mountains: string;
+  palette: BiomePalette;
   density: { trees: number; buildings: number; mountains: number };
+};
+
+/** Iluminação cel: sol, matiz de sombra e ambiente hemisférico em degraus. */
+export type CelLighting = {
+  /** direção PARA o sol (mundo); é normalizada ao aplicar */
+  sunDir: [number, number, number];
+  sun: string;
+  shadowTint: string;
+  skyAmbient: string;
+  groundAmbient: string;
+  rim: string;
+  ink: string;
+  reflectSky: string;
+  reflectHorizon: string;
+  reflectGround: string;
 };
 
 export type WeatherDefinition = {
@@ -54,11 +99,11 @@ export type WeatherDefinition = {
   grip: number;
   /** multiplicador de frenagem */
   braking: number;
-  background: string;
+  /** preset do domo cel (ver rendering/sky/presets) */
+  skyPreset: 'clear-day' | 'sunset' | 'rain-light' | 'rain-heavy' | 'fog' | 'storm' | 'snow' | 'space';
   fog: { color: string; near: number; far: number };
-  sky: { sunPosition: [number, number, number]; turbidity: number; rayleigh: number; mie: number };
-  light: { sun: number; sunColor: string; ambient: number; hemisphere: number };
-  exposure: number;
+  /** luz do pipeline cel para este clima */
+  light: CelLighting;
   /** 0 = sem chuva, 1 = chuva forte */
   rain: number;
   /** 0 = pista seca, 1 = encharcada (asfalto mais escuro e refletivo) */
@@ -69,7 +114,10 @@ export type QualityProfile = {
   level: QualityLevel;
   label: string;
   dpr: [number, number];
-  postprocessing: boolean;
+  /** traço de pós-processo (MRT + detecção de bordas); o casco invertido fica sempre ligado */
+  edges: boolean;
+  /** escala de resolução do passe de bordas (1 = cheia) */
+  edgeScale: number;
   /** gotas de chuva com intensidade 1 */
   rainDrops: number;
   /** fração do cenário instanciado (árvores/prédios) */

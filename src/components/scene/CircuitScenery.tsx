@@ -1,30 +1,19 @@
-import { Environment, Sky } from '@react-three/drei';
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import type { BiomeDefinition, WeatherDefinition } from '../../game/contracts';
 import type { TrackFrames } from '../../game/tracks';
+import { seededRandom } from '../../game/world/generator';
 import { buildScenery, GROUND_Y } from '../../game/world/scenery';
-import { createWindowTexture } from './textures';
+import { addOutline, createCelMaterial } from '../../rendering/cel';
+import { applyCelLighting } from '../../rendering/environment';
+import { SKY_PRESETS, SkyDome, SunFlare } from '../../rendering/sky';
+import { createGroundTexture, createWindowTexture } from './textures';
 
-function useInstancedMesh(
-  geometry: THREE.BufferGeometry,
-  material: THREE.Material,
-  matrices: THREE.Matrix4[],
-  colors?: THREE.Color[],
-) {
-  return useMemo(() => {
-    const mesh = new THREE.InstancedMesh(geometry, material, matrices.length);
-    matrices.forEach((m, i) => {
-      mesh.setMatrixAt(i, m);
-      if (colors) mesh.setColorAt(i, colors[i]);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.computeBoundingSphere();
-    return mesh;
-  }, [colors, geometry, material, matrices]);
-}
-
+/**
+ * Ambiente do circuito em cel: domo de céu do clima, chão chapado, floresta
+ * low-poly com copa e tronco, skyline com fachadas desenhadas e montanhas
+ * com neve. Tudo posicionado por semente (game/world/scenery.ts).
+ */
 type SceneryProps = {
   track: TrackFrames;
   biome: BiomeDefinition;
@@ -33,7 +22,53 @@ type SceneryProps = {
   scenery: number;
 };
 
+function instanced(
+  geometry: THREE.BufferGeometry,
+  material: THREE.Material,
+  matrices: THREE.Matrix4[],
+  colors?: THREE.Color[],
+  outline = false,
+) {
+  const mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, matrices.length));
+  matrices.forEach((m, i) => {
+    mesh.setMatrixAt(i, m);
+    if (colors) mesh.setColorAt(i, colors[i]);
+  });
+  mesh.count = matrices.length;
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.computeBoundingSphere();
+  if (outline) addOutline(mesh);
+  return mesh;
+}
+
+/** Copa em dois cones empilhados (silhueta de pinheiro desenhado) + tronco. */
+function treeGeometries() {
+  const lower = new THREE.ConeGeometry(1, 0.62, 7).translate(0, 0.47, 0);
+  const upper = new THREE.ConeGeometry(0.7, 0.5, 7).translate(0, 0.78, 0);
+  const crown = mergeTwo(lower, upper);
+  const trunk = new THREE.CylinderGeometry(0.12, 0.16, 0.24, 5).translate(0, 0.12, 0);
+  return { crown, trunk };
+}
+
+function mergeTwo(a: THREE.BufferGeometry, b: THREE.BufferGeometry) {
+  const ga = a.toNonIndexed();
+  const gb = b.toNonIndexed();
+  const pos = new Float32Array([...ga.getAttribute('position').array, ...gb.getAttribute('position').array]);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  [a, b, ga, gb].forEach((x) => x.dispose());
+  return g;
+}
+
 export default function CircuitScenery({ track, biome, weather, scenery }: SceneryProps) {
+  const palette = biome.palette;
+
+  useEffect(() => {
+    applyCelLighting(weather.light);
+  }, [weather.light]);
+
   const data = useMemo(() => {
     const full = buildScenery(track, biome);
     const trees = Math.round(full.trees.length * scenery);
@@ -47,55 +82,66 @@ export default function CircuitScenery({ track, biome, weather, scenery }: Scene
     };
   }, [biome, scenery, track]);
 
-  const assets = useMemo(() => {
-    const windowMap = createWindowTexture();
-    return {
-      windowMap,
-      tree: new THREE.ConeGeometry(1, 1, 7).translate(0, 0.5, 0),
-      building: new THREE.BoxGeometry(1, 1, 1),
-      mountain: new THREE.ConeGeometry(1, 1, 6),
-      treeMat: new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }),
-      buildingMat: new THREE.MeshStandardMaterial({ map: windowMap, roughness: 0.6, metalness: 0.1 }),
-      mountainMat: new THREE.MeshStandardMaterial({ color: biome.mountains, roughness: 1, flatShading: true }),
-    };
-  }, [biome.mountains]);
+  const scene = useMemo(() => {
+    const windowMap = createWindowTexture(palette.windows, weather.light.ink, seededRandom(track.def.seed ^ 0xb11d));
+    const tree = treeGeometries();
+    const building = new THREE.BoxGeometry(1, 1, 1);
+    const mountain = new THREE.ConeGeometry(1, 1, 6);
+    const cap = new THREE.ConeGeometry(0.32, 0.3, 6).translate(0, 0.35, 0);
+    const rock = new THREE.IcosahedronGeometry(1, 0);
 
-  const trees = useInstancedMesh(assets.tree, assets.treeMat, data.trees, data.treeColors);
-  const buildings = useInstancedMesh(assets.building, assets.buildingMat, data.buildings, data.buildingColors);
-  const mountains = useInstancedMesh(assets.mountain, assets.mountainMat, data.mountains);
+    const mats = {
+      crown: createCelMaterial({ color: '#ffffff', flatShading: true }),
+      trunk: createCelMaterial({ color: palette.trunk }),
+      building: createCelMaterial({ color: '#ffffff', map: windowMap }),
+      // Montanhas: sem traço interno (vincos viram riscos à distância); só a silhueta em casco invertido.
+      mountain: createCelMaterial({ color: palette.mountains, flatShading: true, edgeMask: 0 }),
+      cap: createCelMaterial({ color: palette.mountainSnow, flatShading: true, edgeMask: 0 }),
+      rock: createCelMaterial({ color: palette.rock, flatShading: true, rim: 0.3 }),
+    };
+
+    const meshes = [
+      instanced(tree.crown, mats.crown, data.trees, data.treeColors, true),
+      instanced(tree.trunk, mats.trunk, data.trees),
+      instanced(building, mats.building, data.buildings, data.buildingColors, true),
+      instanced(mountain, mats.mountain, data.mountains, undefined, true),
+      instanced(cap, mats.cap, data.mountains),
+      instanced(rock, mats.rock, data.rocks, undefined, true),
+    ];
+    return { meshes, mats, windowMap, geometries: [tree.crown, tree.trunk, building, mountain, cap, rock] };
+  }, [data, palette, track.def.seed, weather.light.ink]);
+
+  const groundMat = useMemo(() => {
+    const map = createGroundTexture(palette.ground, palette.groundTones, seededRandom(track.def.seed ^ 0x6a0d));
+    map.repeat.set(20, 20);
+    return createCelMaterial({ color: '#ffffff', map, edgeMask: 0 });
+  }, [palette.ground, palette.groundTones, track.def.seed]);
 
   useEffect(
     () => () => {
-      assets.windowMap.dispose();
-      [assets.tree, assets.building, assets.mountain].forEach((g) => g.dispose());
-      [assets.treeMat, assets.buildingMat, assets.mountainMat].forEach((m) => m.dispose());
+      scene.windowMap.dispose();
+      scene.geometries.forEach((g) => g.dispose());
+      Object.values(scene.mats).forEach((m) => m.dispose());
+      groundMat.dispose();
     },
-    [assets],
+    [groundMat, scene],
   );
+
+  const sky = SKY_PRESETS[weather.skyPreset];
 
   return (
     <>
-      <color attach="background" args={[weather.background]} />
       <fog attach="fog" args={[weather.fog.color, weather.fog.near, weather.fog.far]} />
-      <Sky
-        distance={450000}
-        sunPosition={weather.sky.sunPosition}
-        turbidity={weather.sky.turbidity}
-        rayleigh={weather.sky.rayleigh}
-        mieCoefficient={weather.sky.mie}
-      />
-      <Environment preset="park" environmentIntensity={weather.wetness > 0 ? 0.75 : 0.55} />
-      <ambientLight intensity={weather.light.ambient} color="#dbe8ff" />
-      <hemisphereLight intensity={weather.light.hemisphere} color="#cfe6ff" groundColor="#3b5a35" />
-      <directionalLight intensity={weather.light.sun} color={weather.light.sunColor} position={[120, 180, -140]} />
+      {/* cullHidden: o céu desenha depois do opaco e pula pixels cobertos pelo cenário. */}
+      <SkyDome style={sky} cullHidden />
+      {sky.flare ? <SunFlare sunColor={sky.sunColor} /> : null}
 
-      <mesh rotation-x={-Math.PI / 2} position={[data.center.x, GROUND_Y - 0.02, data.center.z]}>
+      <mesh rotation-x={-Math.PI / 2} position={[data.center.x, GROUND_Y - 0.02, data.center.z]} material={groundMat}>
         <planeGeometry args={[4200, 4200]} />
-        <meshStandardMaterial color={biome.ground} roughness={1} />
       </mesh>
-      <primitive object={trees} />
-      <primitive object={buildings} />
-      <primitive object={mountains} />
+      {scene.meshes.map((mesh) => (
+        <primitive key={mesh.uuid} object={mesh} />
+      ))}
     </>
   );
 }
