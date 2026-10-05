@@ -13,8 +13,9 @@ import type { VehicleSpec } from '../vehicles';
 
 /** Fator de "força centrífuga": quanto o carro é empurrado para fora nas curvas. */
 export const DRIFT = 0.2;
-export const CAR_LENGTH = 3.6;
-export const CAR_WIDTH = 1.9;
+// Envelope de colisão cobre a nave hover mais larga (asas): veículos nunca se interpenetram.
+export const CAR_LENGTH = 4;
+export const CAR_WIDTH = 2.6;
 export const SHOULDER = 2.5;
 
 export type Racer = {

@@ -1,6 +1,6 @@
 import { Html, PerspectiveCamera } from '@react-three/drei';
-import { Canvas } from '@react-three/fiber';
-import { Suspense } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
+import { Suspense, useEffect } from 'react';
 import * as THREE from 'three';
 import { QUALITY } from '../game/quality';
 import { useGameStore } from '../game/store';
@@ -20,6 +20,19 @@ function LoadingFallback() {
       <div className="loading-card">Carregando pista e veículos...</div>
     </Html>
   );
+}
+
+/**
+ * Compila todos os shaders da cena assim que ela termina de carregar, em vez
+ * de na primeira vez que cada objeto aparece (chama do nitro, rival entrando
+ * na tela...) — isso causava quadros de 130–270 ms no meio da corrida.
+ */
+function Precompile() {
+  const { gl, scene, camera } = useThree();
+  useEffect(() => {
+    gl.compile(scene, camera);
+  }, [camera, gl, scene]);
+  return null;
 }
 
 export default function GameScene({ mode, vehicleId }: GameSceneProps) {
@@ -42,6 +55,7 @@ export default function GameScene({ mode, vehicleId }: GameSceneProps) {
       <PerspectiveCamera makeDefault position={[0, 4.2, 9]} fov={62} near={0.1} far={isCircuit ? 3000 : 600} />
       <Suspense fallback={<LoadingFallback />}>
         {isCircuit ? <CircuitMode vehicleId={vehicleId} /> : <InfiniteMode vehicleId={vehicleId} />}
+        <Precompile />
       </Suspense>
       <CelRenderer edges={quality.edges} edgeScale={quality.edgeScale} vignette={0.18} />
     </Canvas>
