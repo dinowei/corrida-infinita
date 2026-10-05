@@ -208,7 +208,7 @@ export default function HoverShip({ livery, fxRef, phase = 0, number = 7 }: Hove
             {[-1, 1].map((side) => (
               <group key={side} position={[side * 0.98, 0.32, 1.45]}>
                 <mesh geometry={geo.flame} material={materials.flame} />
-                <mesh geometry={geo.flame} material={materials.flameCore} scale={[0.42, 0.42, 1.18]} position={[0, 0, 0.01]} />
+                <mesh geometry={geo.flame} material={materials.flameCore} scale={[0.62, 0.62, 1.3]} position={[0, 0, 0.01]} />
               </group>
             ))}
           </group>

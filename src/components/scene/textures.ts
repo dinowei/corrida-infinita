@@ -185,19 +185,17 @@ export function createHullDecalTexture(body: string, stripe: string, ink: string
     ctx.fillStyle = stripe;
     ctx.fillRect(98, 0, 22, 384);
     ctx.fillRect(136, 0, 22, 384);
-    // Número de competição.
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = ink;
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.arc(128, 230, 38, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = ink;
-    ctx.font = 'italic 900 44px Orbitron, Arial, sans-serif';
+    // Número de competição em estêncil grande, branco com contorno de tinta
+    // (sem círculo: círculo + número entre os motores era lido como um rosto).
+    ctx.font = 'italic 900 72px Orbitron, Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(String(number).padStart(2, '0'), 128, 232);
+    ctx.lineWidth = 8;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = ink;
+    ctx.strokeText(String(number).padStart(2, '0'), 128, 240);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(String(number).padStart(2, '0'), 128, 240);
     // Marcas de aviso (chevrons pretos/amarelos) na traseira.
     for (let i = 0; i < 6; i += 1) {
       ctx.fillStyle = i % 2 === 0 ? '#ffd23f' : ink;
